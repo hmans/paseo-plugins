@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentProps, type PluginButtonIconProps } from "@getpaseo/plugin/client";
@@ -29,6 +29,7 @@ export function WorkflowIcon(props: PluginButtonIconProps & { onLabel(label: str
 type ActionsProps = Pick<PluginAgentPanelProps, "workspaceId" | "agentId" | "theme" | "layout"> & { onSent?(): void };
 
 function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: ActionsProps) {
+  const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const query = useWorkflow(workspaceId, agentId);
   const queryClient = useQueryClient();
   const run = useRpc(runAction);
@@ -75,11 +76,13 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
         accessibilityLabel={action.label}
         accessibilityState={{ disabled, busy: send.isPending && send.variables === action.label }}
         disabled={disabled}
+        onHoverIn={() => setHoveredAction(action.label)}
+        onHoverOut={() => setHoveredAction(null)}
         onPress={() => send.mutate(action.label)}
         style={({ pressed }) => ({
           padding: layout.compact ? 12 : 14, gap: 6, borderRadius: 8,
-          borderWidth: 1, borderColor: pressed ? colors.accent : colors.border,
-          backgroundColor: pressed ? colors.surface2 : colors.surface1,
+          borderWidth: 1, borderColor: !disabled && (pressed || hoveredAction === action.label) ? colors.accent : colors.border,
+          backgroundColor: !disabled && (pressed || hoveredAction === action.label) ? colors.surface2 : colors.surface1,
           opacity: disabled ? 0.55 : 1,
         })}
       >
