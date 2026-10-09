@@ -58,6 +58,41 @@ states:
 
 The plugin reads the definition from the workspace's own directory, including its worktree. Commit it to share it with the project. Saving a valid edit updates an open workflow UI within about two seconds; a plugin reload is not needed for YAML changes.
 
+## Conditional actions
+
+Add `when` to an action to make its availability depend on workspace checks. Actions without `when` are always available when the agent is ready. A false condition hides the action. An unknown result disables it and shows an explanation. Conditions do not change the saved workflow state.
+
+```yaml
+conditions:
+  project.tests_pass:
+    command: ["./scripts/check-tests"]
+    interval: 60s
+    timeout: 10s
+
+# Inside a state's actions list:
+# - label: Make a commit
+#   when: git.dirty
+#   prompt: Review the changes and make a commit.
+# - label: Finish
+#   when:
+#     all:
+#       - project.tests_pass
+#       - not: git.dirty
+#   prompt: Summarize the completed work.
+```
+
+`git.dirty` is the first built-in condition. It checks for staged, unstaged, and untracked changes in the workspace checkout, including submodule changes. Ignored files do not count. Git errors produce an unknown result. Results are cached for two seconds. GitHub conditions are not included yet.
+
+Use a condition name, `{ all: [...] }`, `{ any: [...] }`, or `{ not: ... }` in `when`. Lists must be nonempty; expressions can nest up to 20 levels. `not` preserves unknown. A false member decides `all`, and a true member decides `any`; otherwise an unknown member makes the result unknown.
+
+Custom condition names must start with `project.`. Commands use an argument array, run in the workspace directory on the daemon machine, and receive its environment. No shell is added. Use an executable script or an explicit interpreter when needed. Exit 0 means true, exit 1 means false, and other exits, missing executables, or timeouts mean unknown. Command output is not displayed.
+
+Custom commands do not run until you select **Trust these commands in this workspace** in the workflow UI. Review the listed commands and their scripts first: they run automatically with the daemon's filesystem, network, and credential access, outside agent tool approvals. Trust covers future edits to scripts and their dependencies. Changing a custom command definition requires trust again. Trust is scoped to the workspace ID and canonical directory, persists outside the checkout, and can be revoked in the same UI. Revocation prevents subsequent checks; it does not undo or cancel a command already running.
+
+`interval` defaults to `60s`; `timeout` defaults to `10s`. Durations accept positive integers with `ms`, `s`, or `m`. Cache intervals are capped at one hour. An evaluation has a 20-second command budget; a command's timeout is capped by the remaining budget. The plugin allows four checks at once and 64 KiB of combined output per command. Busy and failed checks return unknown and are retried after two seconds. POSIX timeout cleanup terminates the process group; on Windows it terminates the direct process. Checks should be read-only and must not start background services.
+
+Checks run on demand when the UI reads the workflow and when an action is dispatched. Agents in the same workspace share cached results. Dispatch bypasses cached results and rechecks the selected action, then verifies that the workflow definition and revision still match. External state can change after a check, so the prompted agent must still verify the situation before acting.
+
 ## State and transitions
 
 All agents in a workspace share one state. Different workspace IDs have separate state, even when they use the same directory. The first read saves the initial state. Clicking a prompt does not change it.
@@ -77,7 +112,7 @@ State survives plugin reloads and daemon restarts. State and MCP binding records
 
 The MCP server listens on daemon loopback. Each injected configuration contains a separate authorization token; only its hash is stored in the binding records. The server keeps its assigned port across reloads and restarts so saved agent configurations keep working. If another process occupies that port, startup fails rather than silently changing the URL. Paseo's normal MCP tool permission rules apply; the plugin does not auto-approve transitions.
 
-There are no external network calls. State and binding files remain after uninstalling the plugin. The old shell-command interface is no longer served.
+The built-in workflow and Git checks make no external network calls. Trusted custom commands can use the network. State, trust, and binding files remain after uninstalling the plugin. The old shell-command interface is no longer served.
 
 If a definition is invalid, or its saved state has been removed, actions stop and the UI shows an error. Restore the missing state or correct the YAML. The plugin does not silently reset saved state. It also preserves unreadable state files so they can be recovered.
 

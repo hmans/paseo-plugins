@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentProps, type PluginButtonIconProps } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { getWorkflow, runAction } from "../shared/workflow";
+import { getWorkflow, runAction, setCommandTrust } from "../shared/workflow";
 
 function useWorkflow(workspaceId: string, agentId?: string) {
   const get = useRpc(getWorkflow);
@@ -33,8 +33,16 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
   const query = useWorkflow(workspaceId, agentId);
   const queryClient = useQueryClient();
   const run = useRpc(runAction);
+  const saveTrust = useRpc(setCommandTrust);
   const agent = useAgent(agentId, agent => ({ status: agent.status }));
   const snapshot = query.data;
+  const trust = useMutation({
+    mutationFn: (trusted: boolean) => {
+      if (snapshot?.status !== "ready") throw new Error("Workflow is not ready.");
+      return saveTrust({ workspaceId, definitionVersion: snapshot.definitionVersion, trusted });
+    },
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workflow", workspaceId] }); },
+  });
   const send = useMutation({
     mutationFn: (action: string) => {
       if (snapshot?.status !== "ready") throw new Error("Workflow is not ready.");
@@ -69,21 +77,32 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
       <Text style={muted}>Choose a prompt to send to this agent.</Text>
     </View>
     {needsNewAgent && <Text style={{ ...muted, color: colors.statusWarning }}>Create a new agent in this workspace to load the workflow tools. This agent was created without them. Your workspace state will stay the same.</Text>}
+    {Object.keys(snapshot.workflow.conditions).length > 0 && <View style={{ gap: 8 }}>
+      <Text style={muted}>Custom conditions run project commands automatically with the daemon's permissions and credentials. Trust includes future changes to the scripts they call.</Text>
+      {Object.entries(snapshot.workflow.conditions).map(([name, condition]) => <Text key={name} selectable style={muted}>{name}: {JSON.stringify(condition.command)}</Text>)}
+      <Pressable accessibilityRole="button" disabled={trust.isPending} onPress={() => trust.mutate(!snapshot.commandsTrusted)}>
+        <Text style={{ ...text, color: colors.accent }}>{trust.isPending ? "Saving…" : snapshot.commandsTrusted ? "Revoke command trust" : "Trust these commands in this workspace"}</Text>
+      </Pressable>
+      {trust.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{trust.error.message}</Text>}
+    </View>}
     <View style={{ gap: 8 }}>
-      {state.actions.map(action => <Pressable
+      {state.actions.filter(action => snapshot.actionConditions?.[action.label]?.value !== "false").map(action => {
+        const condition = snapshot.actionConditions?.[action.label];
+        const actionDisabled = disabled || (!!action.when && condition?.value !== "true");
+        return <Pressable
         key={action.label}
         accessibilityRole="button"
         accessibilityLabel={action.label}
-        accessibilityState={{ disabled, busy: send.isPending && send.variables === action.label }}
-        disabled={disabled}
+        accessibilityState={{ disabled: actionDisabled, busy: send.isPending && send.variables === action.label }}
+        disabled={actionDisabled}
         onHoverIn={() => setHoveredAction(action.label)}
         onHoverOut={() => setHoveredAction(null)}
         onPress={() => send.mutate(action.label)}
         style={({ pressed }) => ({
           padding: layout.compact ? 12 : 14, gap: 6, borderRadius: 8,
-          borderWidth: 1, borderColor: !disabled && (pressed || hoveredAction === action.label) ? colors.accent : colors.border,
-          backgroundColor: !disabled && (pressed || hoveredAction === action.label) ? colors.surface2 : colors.surface1,
-          opacity: disabled ? 0.55 : 1,
+          borderWidth: 1, borderColor: !actionDisabled && (pressed || hoveredAction === action.label) ? colors.accent : colors.border,
+          backgroundColor: !actionDisabled && (pressed || hoveredAction === action.label) ? colors.surface2 : colors.surface1,
+          opacity: actionDisabled ? 0.55 : 1,
         })}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -91,7 +110,9 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
           <Text style={{ ...text, flex: 1, fontWeight: "600" }}>{send.isPending && send.variables === action.label ? "Sending…" : action.label}</Text>
         </View>
         <Text numberOfLines={3} style={muted}>{action.prompt}</Text>
-      </Pressable>)}
+        {action.when && condition?.value !== "true" && <Text style={{ ...muted, color: colors.statusWarning }}>{condition?.message ?? "Checking condition…"}</Text>}
+      </Pressable>; })}
+      {state.actions.every(action => snapshot.actionConditions?.[action.label]?.value === "false") && <Text style={muted}>No actions match the current workspace conditions.</Text>}
     </View>
     {busy && !needsNewAgent && <Text style={muted}>Actions are available when this agent is ready for a new prompt.</Text>}
     {send.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{send.error.message}</Text>}

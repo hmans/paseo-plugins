@@ -19,6 +19,9 @@ states:
   implementing:
     label: Implementing
     actions:
+      - label: Make a commit
+        when: git.dirty
+        prompt: Review the uncommitted changes and make a Conventional Commit.
       - label: Implement the plan
         prompt: |
           Implement the agreed plan and run the relevant checks.
@@ -32,6 +35,9 @@ states:
   reviewing:
     label: Reviewing
     actions:
+      - label: Make a commit
+        when: git.dirty
+        prompt: Review the uncommitted changes and make a Conventional Commit.
       - label: Review changes
         prompt: |
           Review the changes for correctness, regressions, and missing checks.

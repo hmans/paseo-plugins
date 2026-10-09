@@ -179,7 +179,7 @@ test("injection preserves configuration, binds actual workspace IDs, and support
 });
 
 test("action RPC sends only to the selected agent and rejects busy or stale requests", async t => {
-  const { cwd, store } = await setup(t);
+  const { cwd, store, file } = await setup(t);
   const previous = process.env.PASEO_WORKFLOW_DATA_DIR;
   process.env.PASEO_WORKFLOW_DATA_DIR = store.directory;
   const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
@@ -210,6 +210,13 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     assert.equal(sent[0].agentId, "selected-agent");
     assert.equal(sent[0].text, "Write a plan.");
     assert.equal(requireReady(await store.inspect("one", cwd)).state, "planning");
+    let refreshCount = 0;
+    const becomingBusy = { paseo: { ...context.paseo, agents: { ref: () => ({
+      refresh: async () => ({ agent: { workspaceId: "one", status: ++refreshCount === 1 ? "idle" : "running" } }),
+      send: async () => { assert.fail("Must not dispatch after the agent becomes busy."); },
+    }) } } };
+    await assert.rejects(handlers.get("workflow.run-action")!(input, becomingBusy), /Wait for this agent/);
+    assert.equal(refreshCount, 2);
     status = "running";
     await assert.rejects(handlers.get("workflow.run-action")!(input, context), /Wait for this agent/);
     status = "idle";
@@ -218,6 +225,14 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     workspaceId = "one";
     await store.transition("one", cwd, expected(snapshot, "implementing"));
     await assert.rejects(handlers.get("workflow.run-action")!(input, context), /workflow changed/);
+    assert.equal(sent.length, 1);
+    await writeFile(file, fixture.replace("prompt: Implement the plan.", "prompt: Implement the plan.\n        when: project.check") + `conditions:\n  project.check:\n    command: ${JSON.stringify([process.execPath, "-e", "process.exit(1)"])}\n`);
+    const conditional = await handlers.get("workflow.get")!({ workspaceId: "one", agentId: "selected-agent" }, context) as ReadyWorkflow;
+    assert.equal(conditional.actionConditions?.Implement.value, "unknown");
+    await assert.rejects(handlers.get("workflow.command-trust")!({ workspaceId: "one", definitionVersion: "stale", trusted: true }, context), /Workflow changed/);
+    await handlers.get("workflow.command-trust")!({ workspaceId: "one", definitionVersion: conditional.definitionVersion, trusted: true }, context);
+    const conditionalInput = { workspaceId: "one", agentId: "selected-agent", action: "Implement", ...expected(conditional, "planning") };
+    await assert.rejects(handlers.get("workflow.run-action")!(conditionalInput, context), /condition is no longer met/);
     assert.equal(sent.length, 1);
   } finally {
     await cleanup();
