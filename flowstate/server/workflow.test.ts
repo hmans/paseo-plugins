@@ -31,7 +31,7 @@ async function setup(t: TestContext) {
   t.after(() => rm(root, { recursive: true, force: true }));
   const cwd = join(root, "project");
   await mkdir(join(cwd, ".paseo"), { recursive: true });
-  const file = join(cwd, ".paseo", "workflow.yaml");
+  const file = join(cwd, ".paseo", "flowstate.yml");
   await writeFile(file, fixture);
   const store = new WorkflowStore(join(root, "data"));
   return { root, cwd, file, store };
@@ -213,8 +213,8 @@ test("injection preserves configuration, binds actual workspace IDs, and support
 
 test("action RPC sends only to the selected agent and rejects busy or stale requests", async t => {
   const { cwd, store, file } = await setup(t);
-  const previous = process.env.PASEO_WORKFLOW_DATA_DIR;
-  process.env.PASEO_WORKFLOW_DATA_DIR = store.directory;
+  const previous = process.env.PASEO_FLOWSTATE_DATA_DIR;
+  process.env.PASEO_FLOWSTATE_DATA_DIR = store.directory;
   const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
   const hooks = new Map<string, (input: any) => Promise<any>>();
   const cleanup = contribute({
@@ -272,16 +272,16 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     assert.equal(requireReady(await store.inspect("one", cwd)).state, "implementing");
   } finally {
     await cleanup();
-    if (previous === undefined) delete process.env.PASEO_WORKFLOW_DATA_DIR;
-    else process.env.PASEO_WORKFLOW_DATA_DIR = previous;
+    if (previous === undefined) delete process.env.PASEO_FLOWSTATE_DATA_DIR;
+    else process.env.PASEO_FLOWSTATE_DATA_DIR = previous;
   }
 });
 
 test("archive actions use the selected workspace without MCP and retain dispatch checks", async t => {
   const { cwd, store, file } = await setup(t);
   await writeFile(file, fixture + "actions:\n  - label: Archive\n    operation: workspace.archive\n    when: github.pr.merged\n  - label: Conditional archive\n    operation: workspace.archive\n    when: git.dirty\n");
-  const previous = process.env.PASEO_WORKFLOW_DATA_DIR;
-  process.env.PASEO_WORKFLOW_DATA_DIR = store.directory;
+  const previous = process.env.PASEO_FLOWSTATE_DATA_DIR;
+  process.env.PASEO_FLOWSTATE_DATA_DIR = store.directory;
   const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
   const cleanup = contribute({
     handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler),
@@ -348,7 +348,7 @@ test("archive actions use the selected workspace without MCP and retain dispatch
     assert.equal(requireReady(await store.inspect("one", cwd)).revision, snapshot.revision);
   } finally {
     await cleanup();
-    if (previous === undefined) delete process.env.PASEO_WORKFLOW_DATA_DIR;
-    else process.env.PASEO_WORKFLOW_DATA_DIR = previous;
+    if (previous === undefined) delete process.env.PASEO_FLOWSTATE_DATA_DIR;
+    else process.env.PASEO_FLOWSTATE_DATA_DIR = previous;
   }
 });

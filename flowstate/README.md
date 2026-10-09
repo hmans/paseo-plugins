@@ -22,7 +22,7 @@ paseo plugin add git:hmans/paseo-plugins:flowstate
 
 Plugins must be enabled on the target daemon. This plugin's installation ID is `flowstate`.
 
-1. Add `.paseo/workflow.yaml` to the workspace checkout. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/workflow.yaml`](../.paseo/workflow.yaml).
+1. Add `.paseo/flowstate.yml` to the workspace checkout. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/flowstate.yml`](../.paseo/flowstate.yml).
 2. Create a new agent in that workspace after the plugin is running. Its composer shows a branch icon and the current state, such as **Planning**.
 3. Select an action pill to send its prompt or run its operation directly. Actions are disabled while that agent is running or initializing, or while an action is being dispatched. The state pill opens action descriptions, condition explanations, and command trust controls.
 4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
@@ -153,7 +153,9 @@ Paseo supplies the workspace identity when the agent session opens. Tool calls c
 
 Before a transition, the agent reads the current state and supplies the target, expected state, revision, and definition version. The backend checks the allowed transition and rejects stale requests. Requests within a workspace are serialized. The plugin validates the transition graph; the agent and user decide whether the task's completion criteria are met.
 
-State survives plugin reloads and daemon restarts. State and MCP binding records are stored outside the checkout in `$PASEO_HOME/workspace-workflow`, defaulting to `~/.paseo/workspace-workflow`. Flowstate keeps this storage path and the `workspace-workflow` MCP configuration key for compatibility with existing agents and saved state. Set `PASEO_WORKFLOW_DATA_DIR` in the daemon environment to choose another directory before creating agents. Run only one plugin installation per data directory.
+State survives plugin reloads and daemon restarts. State, command trust, and MCP binding records are stored outside the checkout in `$PASEO_HOME/flowstate`, defaulting to `~/.paseo/flowstate`. Set `PASEO_FLOWSTATE_DATA_DIR` in the daemon environment to choose another directory before creating agents. The MCP configuration key is `flowstate`. Run only one plugin installation per data directory.
+
+When upgrading from workspace-workflow, rename `.paseo/workflow.yaml` to `.paseo/flowstate.yml`. With the plugin disabled, move the old `$PASEO_HOME/workspace-workflow` directory to `$PASEO_HOME/flowstate` to keep saved state, command trust, and MCP bindings. If you use a custom directory, replace `PASEO_WORKFLOW_DATA_DIR` with `PASEO_FLOWSTATE_DATA_DIR`. Old names are no longer read and data is not moved automatically. Create new agents after enabling Flowstate to use the new MCP configuration and bootstrap token names.
 
 The MCP server listens on daemon loopback. Each injected configuration contains a separate authorization token; only its hash is stored in the binding records. The server keeps its assigned port across reloads and restarts so saved agent configurations keep working. If another process occupies that port, startup fails rather than silently changing the URL. Paseo's normal MCP tool permission rules apply; the plugin does not auto-approve transitions.
 

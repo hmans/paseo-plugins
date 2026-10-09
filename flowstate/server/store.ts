@@ -53,14 +53,14 @@ export class WorkflowStore {
   // Caller must hold the workspace queue when composing this with a write or dispatch.
   async read(workspaceId: string, cwd: string): Promise<WorkflowSnapshot> {
     let source: string;
-    try { source = await readFile(join(cwd, ".paseo", "workflow.yaml"), "utf8"); }
+    try { source = await readFile(join(cwd, ".paseo", "flowstate.yml"), "utf8"); }
     catch (error) {
-      if (isMissing(error)) return { status: "missing", message: "Add .paseo/workflow.yaml to this workspace to configure its workflow." };
+      if (isMissing(error)) return { status: "missing", message: "Add .paseo/flowstate.yml to this workspace to configure its workflow." };
       throw error;
     }
     let workflow;
     try { workflow = parseWorkflow(source); }
-    catch (error) { throw new Error(`Invalid .paseo/workflow.yaml: ${errorMessage(error)}`); }
+    catch (error) { throw new Error(`Invalid .paseo/flowstate.yml: ${errorMessage(error)}`); }
     let record;
     try { record = recordSchema.parse(JSON.parse(await readFile(this.path(workspaceId), "utf8"))); }
     catch (error) {
@@ -68,7 +68,7 @@ export class WorkflowStore {
       record = { state: workflow.initial, revision: randomUUID(), updatedAt: new Date().toISOString() };
       await this.save(workspaceId, record);
     }
-    if (!Object.hasOwn(workflow.states, record.state)) throw new Error(`Saved state "${record.state}" is missing from workflow.yaml. Restore that state before continuing.`);
+    if (!Object.hasOwn(workflow.states, record.state)) throw new Error(`Saved state "${record.state}" is missing from flowstate.yml. Restore that state before continuing.`);
     return {
       status: "ready", workspaceId, ...record, workflow,
       definitionVersion: createHash("sha256").update(source).digest("hex"),

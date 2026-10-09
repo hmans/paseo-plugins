@@ -37,7 +37,7 @@ test("Git conditions observe untracked, staged, clean, and non-repository worksp
   t.after(() => rm(root, { recursive: true, force: true }));
   const cwd = join(root, "repo");
   await mkdir(join(cwd, ".paseo"), { recursive: true });
-  await writeFile(join(cwd, ".paseo/workflow.yaml"), definition());
+  await writeFile(join(cwd, ".paseo/flowstate.yml"), definition());
   execFileSync("git", ["init", "-q", cwd]);
   const store = new WorkflowStore(join(root, "data"));
   const snapshot = requireReady(await store.inspect("one", cwd));
@@ -49,7 +49,7 @@ test("Git conditions observe untracked, staged, clean, and non-repository worksp
   assert.equal(await read(), "true");
   execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "initial"], { cwd });
   assert.equal(await read(), "false");
-  await writeFile(join(cwd, ".paseo/workflow.yaml"), definition() + "\n");
+  await writeFile(join(cwd, ".paseo/flowstate.yml"), definition() + "\n");
   assert.equal(await read(), "true");
   assert.equal(await read(root), "unknown");
 });
@@ -61,7 +61,7 @@ test("custom checks require trust, share cached work, recheck on dispatch, and i
   const counter = join(root, "counter");
   const script = `require('fs').appendFileSync(${JSON.stringify(counter)}, 'x'); setTimeout(() => process.exit(0), 40)`;
   const config = { "project.check": { command: [process.execPath, "-e", script], interval: "60s", timeout: "2s" } };
-  await writeFile(join(root, ".paseo/workflow.yaml"), definition("project.check", config));
+  await writeFile(join(root, ".paseo/flowstate.yml"), definition("project.check", config));
   const store = new WorkflowStore(join(root, "data"));
   const snapshot = requireReady(await store.inspect("one", root));
   const conditions = new Conditions(store.directory);
@@ -88,7 +88,7 @@ test("merged PR checks read each time and fail closed when workspace data is una
   const root = await mkdtemp(join(tmpdir(), "workflow-pr-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, ".paseo"));
-  await writeFile(join(root, ".paseo/workflow.yaml"), definition("github.pr.merged"));
+  await writeFile(join(root, ".paseo/flowstate.yml"), definition("github.pr.merged"));
   const store = new WorkflowStore(join(root, "data"));
   const snapshot = requireReady(await store.inspect("one", root));
   const conditions = new Conditions(store.directory);
@@ -120,7 +120,7 @@ test("custom exit codes map to false and unknown without exposing output", async
   const store = new WorkflowStore(join(root, "data"));
   const conditions = new Conditions(store.directory);
   for (const [code, result] of [[1, "false"], [2, "unknown"]] as const) {
-    await writeFile(join(root, ".paseo/workflow.yaml"), definition("project.check", {
+    await writeFile(join(root, ".paseo/flowstate.yml"), definition("project.check", {
       "project.check": { command: [process.execPath, "-e", `console.error('private output'); process.exit(${code})`] },
     }));
     const snapshot = requireReady(await store.inspect("one", root));

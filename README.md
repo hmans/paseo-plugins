@@ -25,4 +25,4 @@ npm test
 
 To register the local plugin, run `paseo plugin install .` from its directory.
 
-The root `.paseo/workflow.yaml` configures this repository's development workflow. It is separate from the plugin source and is not moved into individual plugin directories.
+The root `.paseo/flowstate.yml` configures this repository's development workflow. It is separate from the plugin source and is not moved into individual plugin directories.

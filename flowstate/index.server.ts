@@ -9,7 +9,7 @@ import { registerMcpInjection } from "./server/injection";
 import { operationHandlers } from "./server/operations";
 
 export default function contribute(server: PluginServerContext) {
-  const directory = process.env.PASEO_WORKFLOW_DATA_DIR ?? join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "workspace-workflow");
+  const directory = process.env.PASEO_FLOWSTATE_DATA_DIR ?? join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "flowstate");
   const store = new WorkflowStore(directory);
   const conditions = new Conditions(directory);
   const mcp = startWorkflowMcp(store);
