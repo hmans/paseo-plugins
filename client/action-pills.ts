@@ -1,7 +1,7 @@
-import type { PluginButton, PluginButtonRegistration } from "@getpaseo/plugin/client";
+import type { PluginButton, PluginButtonIcon, PluginButtonRegistration } from "@getpaseo/plugin/client";
 import type { WorkflowSnapshot } from "../shared/workflow";
 
-export function actionButtons(snapshot: WorkflowSnapshot | undefined, busy: boolean, onPress: (label: string) => Promise<void>): PluginButton[] {
+export function actionButtons(snapshot: WorkflowSnapshot | undefined, busy: boolean, onPress: (label: string) => Promise<void>, renderIcon: (name: string) => PluginButtonIcon = name => name): PluginButton[] {
   if (snapshot?.status !== "ready") return [];
   return snapshot.workflow.states[snapshot.state].actions.map(action => {
     const condition = snapshot.actionConditions?.[action.label];
@@ -11,7 +11,7 @@ export function actionButtons(snapshot: WorkflowSnapshot | undefined, busy: bool
     return {
       label: action.label,
       title: reason ? `${action.label}: ${reason}` : action.prompt,
-      icon: "Send",
+      icon: renderIcon(action.icon ?? "Send"),
       visible: condition?.value !== "false",
       disabled: !!reason,
       behavior: { kind: "action", onPress: () => onPress(action.label) },

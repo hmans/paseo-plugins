@@ -52,6 +52,18 @@ test("validates YAML, state references, nonempty actions, and unique labels", ()
   assert.throws(() => parseWorkflow(fixture + "unknown: true\n"), /Unrecognized/);
 });
 
+test("accepts optional state and action icons and rejects invalid name formats", () => {
+  const configured = fixture.replace("  planning:\n", "  planning:\n    icon: NotebookPen\n").replace("      - label: Plan", "      - label: Plan\n        icon: GitCommitHorizontal");
+  const workflow = parseWorkflow(configured);
+  assert.equal(workflow.states.planning.icon, "NotebookPen");
+  assert.equal(workflow.states.planning.actions[0].icon, "GitCommitHorizontal");
+  assert.equal(parseWorkflow(fixture).states.planning.icon, undefined);
+  for (const invalid of ['""', '"git-commit"', '"/tmp/icon.svg"', '"<svg>"']) {
+    assert.throws(() => parseWorkflow(configured.replace("GitCommitHorizontal", invalid)), /PascalCase/);
+    assert.throws(() => parseWorkflow(configured.replace("NotebookPen", invalid)), /PascalCase/);
+  }
+});
+
 test("initializes once, isolates workspaces, and preserves state across a new store", async t => {
   const { cwd, store } = await setup(t);
   const initial = requireReady(await store.inspect("one", cwd));

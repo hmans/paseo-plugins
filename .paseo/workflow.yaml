@@ -3,13 +3,16 @@ initial: planning
 states:
   planning:
     label: Planning
+    icon: NotebookPen
     actions:
       - label: Explore requirements
+        icon: Search
         prompt: |
           Explore the requirements for the current task.
           Identify open questions and discuss them with the user.
           Stay in planning until a plan is agreed.
       - label: Write a plan
+        icon: ListTodo
         prompt: |
           Write a concrete implementation plan for the current task.
           Ask the user to resolve any blocking decisions.
@@ -18,15 +21,19 @@ states:
 
   implementing:
     label: Implementing
+    icon: Code
     actions:
       - label: Make a commit
+        icon: GitCommitHorizontal
         when: git.dirty
         prompt: Review the uncommitted changes and make a Conventional Commit.
       - label: Implement the plan
+        icon: Code
         prompt: |
           Implement the agreed plan and run the relevant checks.
           When the changes are ready for review, transition to reviewing.
       - label: Revisit the plan
+        icon: Undo2
         prompt: |
           Explain which parts of the plan need to change and why.
           Transition to planning so we can revise it together.
@@ -34,11 +41,14 @@ states:
 
   reviewing:
     label: Reviewing
+    icon: ScanEye
     actions:
       - label: Make a commit
+        icon: GitCommitHorizontal
         when: git.dirty
         prompt: Review the uncommitted changes and make a Conventional Commit.
       - label: Review changes
+        icon: ScanEye
         prompt: |
           Review the changes for correctness, regressions, and missing checks.
           If fixes are needed, summarize them and transition to implementing.
@@ -47,8 +57,10 @@ states:
 
   done:
     label: Done
+    icon: CircleCheck
     actions:
       - label: Start the next task
+        icon: Plus
         prompt: |
           Summarize the completed work, then ask what we should tackle next.
           Perform a git fetch, then move this worktree to a new branch off of origin/main.

@@ -53,6 +53,7 @@ states:
 - State IDs start with a lowercase letter and contain lowercase letters, numbers, underscores, or hyphens.
 - Each state has one or more actions. Each action needs a nonempty `label` and `prompt`. Action labels must be unique within that state.
 - `label` on a state is optional; the UI uses the state ID when it is absent.
+- `icon` on a state or action is an optional PascalCase [Lucide icon name](https://lucide.dev/icons/), such as `ScanEye` or `GitCommitHorizontal`. State icons appear in the state pill; action icons appear in both action pills and the expanded list. Defaults are `GitBranch` for states and `Send` for actions. Paseo supplies the icon set: unknown names render no icon, while invalid name formats produce a configuration error. Image paths and SVG markup are not supported.
 - `transitions` lists the allowed destination state IDs. An omitted or empty list makes the state terminal.
 - Unknown fields, duplicate YAML keys, and YAML aliases are rejected. The file size limit is 256 KiB.
 

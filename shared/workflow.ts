@@ -3,6 +3,7 @@ import { z } from "zod";
 
 const identifier = z.string().regex(/^[a-z][a-z0-9_-]*$/);
 const text = z.string().trim().min(1);
+const iconName = z.string().regex(/^[A-Z][A-Za-z0-9]*$/, "Use a PascalCase Lucide icon name, such as GitCommitHorizontal.");
 export const builtinConditions = ["git.dirty"] as const;
 export type ConditionExpression = string | { all: ConditionExpression[] } | { any: ConditionExpression[] } | { not: ConditionExpression };
 const expression: z.ZodType<ConditionExpression> = z.lazy(() => z.union([
@@ -19,7 +20,8 @@ export const workflowSchema = z.object({
   }).strict()).default({}),
   states: z.record(identifier, z.object({
     label: text.optional(),
-    actions: z.array(z.object({ label: text, prompt: text, when: expression.optional() }).strict()).min(1),
+    icon: iconName.optional(),
+    actions: z.array(z.object({ label: text, prompt: text, icon: iconName.optional(), when: expression.optional() }).strict()).min(1),
     transitions: z.array(identifier).default([]),
   }).strict()),
 }).strict().superRefine((workflow, ctx) => {

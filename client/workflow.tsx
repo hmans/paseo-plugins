@@ -6,6 +6,12 @@ import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { getWorkflow, runAction, setCommandTrust } from "../shared/workflow";
 import { actionButtons } from "./action-pills";
 
+function actionIcon(name: string) {
+  return function ActionIcon({ size, color }: PluginButtonIconProps) {
+    return <Icon name={name} size={size} color={color} />;
+  };
+}
+
 function useWorkflow(workspaceId: string, agentId?: string) {
   const get = useRpc(getWorkflow);
   return useQuery({
@@ -42,10 +48,11 @@ export function WorkflowIcon(props: PluginButtonIconProps & { agentId: string; o
     : data?.status === "missing" ? "Set up workflow" : "Workflow";
   useEffect(() => props.onLabel(label), [label, props.onLabel]);
   useEffect(() => {
-    props.onActions(actionButtons(query.isError ? undefined : data, busy, dispatch));
+    props.onActions(actionButtons(query.isError ? undefined : data, busy, dispatch, actionIcon));
   }, [data, query.isError, busy, dispatch, props.onActions]);
   useEffect(() => () => props.onActions([]), [props.onActions]);
-  return <Icon name="GitBranch" size={props.size} color={props.color} />;
+  const icon = !query.isError && data?.status === "ready" ? data.workflow.states[data.state].icon ?? "GitBranch" : "GitBranch";
+  return <Icon name={icon} size={props.size} color={props.theme.colors.accent} />;
 }
 
 type ActionsProps = Pick<PluginAgentPanelProps, "workspaceId" | "agentId" | "theme" | "layout"> & { onSent?(): void };
@@ -128,7 +135,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
         })}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Icon name="Send" size={15} color={colors.accent} />
+          <Icon name={action.icon ?? "Send"} size={15} color={colors.accent} />
           <Text style={{ ...text, flex: 1, fontWeight: "600" }}>{send.isPending && send.variables === action.label ? "Sending…" : action.label}</Text>
         </View>
         <Text numberOfLines={3} style={muted}>{action.prompt}</Text>

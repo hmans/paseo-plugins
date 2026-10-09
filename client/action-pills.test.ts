@@ -20,6 +20,7 @@ test("action pills reflect conditions, availability, and direct dispatch", async
   assert.deepEqual(buttons.map(button => button.label), ["Review", "Commit"]);
   assert.ok(buttons.every(button => button.visible && !button.disabled));
   assert.equal(buttons[0].title, "Review the work.");
+  assert.equal(buttons[0].icon, "Send");
   assert.equal(buttons[1].behavior.kind, "action");
   if (buttons[1].behavior.kind === "action") await buttons[1].behavior.onPress();
   assert.deepEqual(sent, ["Commit"]);
@@ -34,6 +35,17 @@ test("action pills reflect conditions, availability, and direct dispatch", async
   assert.equal(actionButtons({ ...snapshot, actionConditions: undefined }, false, dispatch)[1].disabled, true);
   assert.deepEqual(actionButtons({ status: "error", message: "Offline" }, false, dispatch), []);
   assert.deepEqual(actionButtons(undefined, false, dispatch), []);
+});
+
+test("action icons reach the host renderer and update with the configuration", () => {
+  const configured = structuredClone(snapshot);
+  configured.workflow.states.working.actions[1].icon = "GitCommitHorizontal";
+  assert.equal(actionButtons(configured, false, async () => {})[1].icon, "GitCommitHorizontal");
+  const names: string[] = [];
+  actionButtons(configured, false, async () => {}, name => { names.push(name); return name; });
+  assert.deepEqual(names, ["Send", "GitCommitHorizontal"]);
+  configured.workflow.states.working.actions[1].icon = "ScanEye";
+  assert.equal(actionButtons(configured, false, async () => {})[1].icon, "ScanEye");
 });
 
 test("pill registrations update, remove obsolete actions, and ignore late updates after cleanup", () => {
