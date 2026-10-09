@@ -60,6 +60,9 @@ states:
     label: Done
     icon: CircleCheck
     actions:
+      - label: Archive workspace
+        operation: workspace.archive
+        when: github.pr.merged
       - label: Start the next task
         icon: Plus
         prompt: |

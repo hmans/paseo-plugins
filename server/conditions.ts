@@ -102,7 +102,7 @@ export class Conditions {
     this.cache.clear();
   }
 
-  async results(snapshot: ReadyWorkflow, cwd: string, force = false, actionLabel?: string) {
+  async results(snapshot: ReadyWorkflow, cwd: string, force = false, actionLabel?: string, readPullRequestMerged?: () => Promise<boolean>) {
     const deadline = Date.now() + 20000;
     const id = await this.identity(snapshot, cwd);
     const trusted = await this.trusted(snapshot, cwd);
@@ -110,6 +110,16 @@ export class Conditions {
     const resolve = (name: string): Promise<ConditionResult> => {
       const existing = resolved.get(name);
       if (existing) return existing;
+      // Read Paseo's current attachment on each evaluation; do not cache a previous PR.
+      if (name === "github.pr.merged") {
+        const result = (async () => {
+          try {
+            return readPullRequestMerged ? value(await readPullRequestMerged()) : unknown("Workspace pull request data is unavailable.");
+          } catch { return unknown("Could not read the workspace's attached pull request."); }
+        })();
+        resolved.set(name, result);
+        return result;
+      }
       const custom = snapshot.workflow.conditions[name];
       if (custom && !trusted) return Promise.resolve(unknown("Trust custom commands to evaluate this condition."));
       const key = JSON.stringify([id.key, id.fingerprint, name]);

@@ -43,7 +43,7 @@ test("Git conditions observe untracked, staged, clean, and non-repository worksp
   const snapshot = requireReady(await store.inspect("one", cwd));
   const conditions = new Conditions(store.directory);
   const read = async (path = cwd) => (await conditions.results(snapshot, path, true)).actionConditions.Act.value;
-  assert.deepEqual(builtinConditions, ["git.dirty"]);
+  assert.deepEqual(builtinConditions, ["git.dirty", "github.pr.merged"]);
   assert.equal(await read(), "true");
   execFileSync("git", ["add", "."], { cwd });
   assert.equal(await read(), "true");
@@ -82,6 +82,22 @@ test("custom checks require trust, share cached work, recheck on dispatch, and i
   await conditions.trust(snapshot, root, false);
   assert.equal((await conditions.results(snapshot, root, true)).actionConditions.Act.value, "unknown");
   assert.equal(await readFile(counter, "utf8"), "xx");
+});
+
+test("merged PR checks read each time and fail closed when workspace data is unavailable", async t => {
+  const root = await mkdtemp(join(tmpdir(), "workflow-pr-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, ".paseo"));
+  await writeFile(join(root, ".paseo/workflow.yaml"), definition("github.pr.merged"));
+  const store = new WorkflowStore(join(root, "data"));
+  const snapshot = requireReady(await store.inspect("one", root));
+  const conditions = new Conditions(store.directory);
+  t.after(() => conditions.close());
+  const read = async (reader?: () => Promise<boolean>) => (await conditions.results(snapshot, root, false, undefined, reader)).actionConditions.Act;
+  assert.equal((await read(async () => true)).value, "true");
+  assert.equal((await read(async () => false)).value, "false");
+  assert.equal((await read(async () => { throw new Error("Offline"); })).value, "unknown");
+  assert.equal((await read()).value, "unknown");
 });
 
 test("command failures, timeout, output limits, and exit codes are bounded", async () => {

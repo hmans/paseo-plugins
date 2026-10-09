@@ -4,7 +4,7 @@ import { z } from "zod";
 const identifier = z.string().regex(/^[a-z][a-z0-9_-]*$/);
 const text = z.string().trim().min(1);
 const iconName = z.string().regex(/^[A-Z][A-Za-z0-9]*$/, "Use a PascalCase Lucide icon name, such as GitCommitHorizontal.");
-export const builtinConditions = ["git.dirty"] as const;
+export const builtinConditions = ["git.dirty", "github.pr.merged"] as const;
 export type ConditionExpression = string | { all: ConditionExpression[] } | { any: ConditionExpression[] } | { not: ConditionExpression };
 const expression: z.ZodType<ConditionExpression> = z.lazy(() => z.union([
   text, z.object({ all: z.array(expression).min(1) }).strict(),
@@ -13,7 +13,24 @@ const expression: z.ZodType<ConditionExpression> = z.lazy(() => z.union([
 const duration = z.string().regex(/^[1-9][0-9]*(ms|s|m)$/);
 export const conditionResultSchema = z.object({ value: z.enum(["true", "false", "unknown"]), message: z.string().optional() });
 export type ConditionResult = z.infer<typeof conditionResultSchema>;
-const actionSchema = z.object({ label: text, prompt: text, icon: iconName.optional(), when: expression.optional() }).strict();
+export const operations = {
+  "workspace.archive": {
+    icon: "Archive",
+    description: "Archive this workspace. Paseo removes a managed worktree after its last workspace is archived.",
+  },
+} as const;
+const actionFields = { label: text, icon: iconName.optional(), when: expression.optional() };
+const actionSchema = z.union([
+  z.object({ ...actionFields, prompt: text }).strict(),
+  z.object({ ...actionFields, operation: z.enum(["workspace.archive"]) }).strict(),
+]);
+export type WorkflowAction = z.infer<typeof actionSchema>;
+export function actionDescription(action: WorkflowAction) {
+  return "prompt" in action ? action.prompt : operations[action.operation].description;
+}
+export function defaultActionIcon(action: WorkflowAction) {
+  return "prompt" in action ? "Send" : operations[action.operation].icon;
+}
 export const workflowSchema = z.object({
   initial: identifier,
   actions: z.array(actionSchema).default([]),
@@ -95,7 +112,7 @@ export const runAction = defineRpc({
     expectedRevision: text,
     definitionVersion: text,
   }),
-  output: z.object({ sent: z.literal(true) }),
+  output: z.union([z.object({ sent: z.literal(true) }), z.object({ executed: z.literal(true) })]),
 });
 
 export const setCommandTrust = defineRpc({

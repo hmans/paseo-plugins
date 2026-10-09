@@ -1,6 +1,6 @@
 # Workspace workflow
 
-A Paseo plugin that gives each workspace a saved state and a set of prompt actions. Define the workflow in YAML. Actions appear directly as composer pills. Click one to send its prompt to that agent. The agent can then request an allowed state transition.
+A Paseo plugin that gives each workspace a saved state and a set of actions. Define the workflow in YAML. Actions appear directly as composer pills. Click one to send a prompt to the agent or run a supported Paseo operation. Agents can request allowed state transitions.
 
 ## Try it
 
@@ -17,7 +17,7 @@ Plugins must be enabled on the target daemon. This plugin's installation ID is `
 
 1. Add `.paseo/workflow.yaml` to the workspace checkout. This project includes a Planning → Implementing → Reviewing → Done example.
 2. Create a new agent in that workspace after the plugin is running. Its composer shows a branch icon and the current state, such as **Planning**.
-3. Select an action pill to send its prompt directly. Actions are disabled while that agent is running or initializing, or while a prompt is being sent. The state pill still opens the full prompts, condition explanations, and command trust controls.
+3. Select an action pill to send its prompt or run its operation directly. Actions are disabled while that agent is running or initializing, or while an action is being dispatched. The state pill opens action descriptions, condition explanations, and command trust controls.
 4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
 
 Use `/workflow` or **Open workspace workflow** in the Command Center to open the actions in an agent panel.
@@ -51,9 +51,9 @@ states:
 
 - `initial` must name a defined state.
 - State IDs start with a lowercase letter and contain lowercase letters, numbers, underscores, or hyphens.
-- Each action needs a nonempty `label` and `prompt`. Action labels must be unique within a state and must not collide with common action labels. A state's `actions` can be empty or omitted.
+- Each action needs a nonempty `label` and exactly one of `prompt` or `operation`. Prompts must be nonempty; operations must name a supported operation. Action labels must be unique within a state and must not collide with common action labels. A state's `actions` can be empty or omitted.
 - `label` on a state is optional; the UI uses the state ID when it is absent.
-- `icon` on a state or action is an optional PascalCase [Lucide icon name](https://lucide.dev/icons/), such as `ScanEye` or `GitCommitHorizontal`. State icons appear in the state pill; action icons appear in both action pills and the expanded list. Defaults are `GitBranch` for states and `Send` for actions. Paseo supplies the icon set: unknown names render no icon, while invalid name formats produce a configuration error. Image paths and SVG markup are not supported.
+- `icon` on a state or action is an optional PascalCase [Lucide icon name](https://lucide.dev/icons/), such as `ScanEye` or `GitCommitHorizontal`. State icons appear in the state pill; action icons appear in both action pills and the expanded list. Defaults are `GitBranch` for states, `Send` for prompts, and `Archive` for workspace archiving. Paseo supplies the icon set: unknown names render no icon, while invalid name formats produce a configuration error. Image paths and SVG markup are not supported.
 - `transitions` lists the allowed destination state IDs. An omitted or empty list makes the state terminal.
 - Unknown fields, duplicate YAML keys, and YAML aliases are rejected. The file size limit is 256 KiB.
 
@@ -81,6 +81,19 @@ states:
 
 Common action labels must be unique. A collision with a state action is a configuration error; neither action overrides the other. Omit top-level `actions` if you only need state-specific actions.
 
+## Paseo operations
+
+Use `operation` to run a supported Paseo operation directly, without sending a prompt or requiring injected MCP tools. Operations can be state-specific or common actions and support the same `when` conditions and stale-state checks as prompts.
+
+```yaml
+# Inside a state's actions list:
+- label: Archive workspace
+  operation: workspace.archive
+  when: github.pr.merged
+```
+
+`workspace.archive` is currently the only supported operation. It archives the workspace containing the action through Paseo's SDK. Paseo removes a managed worktree after its last workspace is archived. The action runs when clicked and reports SDK errors; it does not change the saved workflow state. Like prompt actions, it waits until the selected agent is neither running nor initializing. Other agents in the workspace are managed by Paseo's archive operation.
+
 ## Conditional actions
 
 Add `when` to an action to make its availability depend on workspace checks. Actions without `when` are always available when the agent is ready. A false condition hides the action. An unknown result disables it and shows an explanation. Conditions do not change the saved workflow state.
@@ -104,7 +117,9 @@ conditions:
 #   prompt: Summarize the completed work.
 ```
 
-`git.dirty` is the first built-in condition. It checks for staged, unstaged, and untracked changes in the workspace checkout, including submodule changes. Ignored files do not count. Git errors produce an unknown result. Results are cached for two seconds. GitHub conditions are not included yet.
+`git.dirty` checks for staged, unstaged, and untracked changes in the workspace checkout, including submodule changes. Ignored files do not count. Git errors produce an unknown result. Results are cached for two seconds.
+
+`github.pr.merged` is true only when Paseo reports that the workspace's currently attached PR is merged. No attached PR, an open PR, or a PR closed without merging returns false and hides the action. The plugin reads the workspace through Paseo's SDK on each evaluation, including dispatch, without adding its own cache or making a separate GitHub request. Freshness follows Paseo's GitHub data. SDK read failures return unknown and disable the action.
 
 Use a condition name, `{ all: [...] }`, `{ any: [...] }`, or `{ not: ... }` in `when`. Lists must be nonempty; expressions can nest up to 20 levels. `not` preserves unknown. A false member decides `all`, and a true member decides `any`; otherwise an unknown member makes the result unknown.
 

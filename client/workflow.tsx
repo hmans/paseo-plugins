@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentProps, type PluginButtonIconProps, type PluginButton } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { getWorkflow, runAction, setCommandTrust, workflowActions } from "../shared/workflow";
+import { actionDescription, defaultActionIcon, getWorkflow, runAction, setCommandTrust, workflowActions } from "../shared/workflow";
 import { actionButtons } from "./action-pills";
 
 function actionIcon(name: string) {
@@ -99,12 +99,12 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
 
   const state = snapshot.workflow.states[snapshot.state];
   const actions = workflowActions(snapshot.workflow, snapshot.state);
-  const needsNewAgent = snapshot.toolsReady === false;
-  const disabled = busy || send.isPending || needsNewAgent;
+  const needsNewAgent = snapshot.toolsReady === false && actions.some(action => "prompt" in action);
+  const disabled = busy || send.isPending;
   return <View style={{ gap: layout.compact ? 14 : 18 }}>
     <View style={{ gap: 5 }}>
       <Text style={{ color: colors.foreground, fontSize: 22, fontWeight: "600" }}>{state.label ?? snapshot.state}</Text>
-      <Text style={muted}>Choose a prompt to send to this agent.</Text>
+      <Text style={muted}>Choose an action.</Text>
     </View>
     {needsNewAgent && <Text style={{ ...muted, color: colors.statusWarning }}>Create a new agent in this workspace to load the workflow tools. This agent was created without them. Your workspace state will stay the same.</Text>}
     {Object.keys(snapshot.workflow.conditions).length > 0 && <View style={{ gap: 8 }}>
@@ -118,7 +118,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
     <View style={{ gap: 8 }}>
       {actions.filter(action => snapshot.actionConditions?.[action.label]?.value !== "false").map(action => {
         const condition = snapshot.actionConditions?.[action.label];
-        const actionDisabled = disabled || (!!action.when && condition?.value !== "true");
+        const actionDisabled = disabled || ("prompt" in action && needsNewAgent) || (!!action.when && condition?.value !== "true");
         return <Pressable
         key={action.label}
         accessibilityRole="button"
@@ -136,18 +136,18 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
         })}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Icon name={action.icon ?? "Send"} size={15} color={colors.accent} />
-          <Text style={{ ...text, flex: 1, fontWeight: "600" }}>{send.isPending && send.variables === action.label ? "Sending…" : action.label}</Text>
+          <Icon name={action.icon ?? defaultActionIcon(action)} size={15} color={colors.accent} />
+          <Text style={{ ...text, flex: 1, fontWeight: "600" }}>{send.isPending && send.variables === action.label ? "Running…" : action.label}</Text>
         </View>
-        <Text numberOfLines={3} style={muted}>{action.prompt}</Text>
+        <Text numberOfLines={3} style={muted}>{actionDescription(action)}</Text>
         {action.when && condition?.value !== "true" && <Text style={{ ...muted, color: colors.statusWarning }}>{condition?.message ?? "Checking condition…"}</Text>}
       </Pressable>; })}
       {actions.length === 0 ? <Text style={muted}>No actions configured for this state.</Text>
         : actions.every(action => snapshot.actionConditions?.[action.label]?.value === "false") && <Text style={muted}>No actions match the current workspace conditions.</Text>}
     </View>
-    {busy && !needsNewAgent && <Text style={muted}>Actions are available when this agent is ready for a new prompt.</Text>}
+    {busy && <Text style={muted}>Wait for this agent to finish before running an action.</Text>}
     {send.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{send.error.message}</Text>}
-    {send.isSuccess && <Text style={{ ...text, color: colors.statusSuccess }}>Prompt sent to this agent.</Text>}
+    {send.isSuccess && <Text style={{ ...text, color: colors.statusSuccess }}>{"sent" in send.data ? "Prompt sent to this agent." : "Workspace archive requested."}</Text>}
     <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: layout.compact ? 12 : 16, gap: 10 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
         <Icon name="ArrowRight" size={14} color={colors.foregroundMuted} />

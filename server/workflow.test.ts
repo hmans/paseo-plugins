@@ -64,6 +64,16 @@ test("accepts optional state and action icons and rejects invalid name formats",
   }
 });
 
+test("actions require exactly one supported operation or prompt", () => {
+  const workflow = (action: unknown) => JSON.stringify({ initial: "done", states: { done: { actions: [action] } } });
+  assert.doesNotThrow(() => parseWorkflow(workflow({ label: "Archive", operation: "workspace.archive" })));
+  for (const action of [
+    { label: "Archive" },
+    { label: "Archive", operation: "workspace.delete" },
+    { label: "Archive", operation: "workspace.archive", prompt: "Archive" },
+  ]) assert.throws(() => parseWorkflow(workflow(action)));
+});
+
 test("validates common actions, collisions, and states without local actions", () => {
   const common = { label: "Commit", prompt: "Commit the changes.", when: "git.dirty" };
   const workflow = { initial: "one", actions: [common], states: { one: {}, two: { actions: [] } } };
@@ -260,6 +270,82 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     await handlers.get("workflow.run-action")!({ ...conditionalInput, action: "Common" }, context);
     assert.deepEqual(sent[1], { agentId: "selected-agent", text: "Common prompt." });
     assert.equal(requireReady(await store.inspect("one", cwd)).state, "implementing");
+  } finally {
+    await cleanup();
+    if (previous === undefined) delete process.env.PASEO_WORKFLOW_DATA_DIR;
+    else process.env.PASEO_WORKFLOW_DATA_DIR = previous;
+  }
+});
+
+test("archive actions use the selected workspace without MCP and retain dispatch checks", async t => {
+  const { cwd, store, file } = await setup(t);
+  await writeFile(file, fixture + "actions:\n  - label: Archive\n    operation: workspace.archive\n    when: github.pr.merged\n  - label: Conditional archive\n    operation: workspace.archive\n    when: git.dirty\n");
+  const previous = process.env.PASEO_WORKFLOW_DATA_DIR;
+  process.env.PASEO_WORKFLOW_DATA_DIR = store.directory;
+  const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
+  const cleanup = contribute({
+    handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler),
+    before: () => () => {},
+  } as unknown as PluginServerContext);
+  let status = "idle";
+  let agentWorkspace = "one";
+  let error: string | null = null;
+  let archivedAt: string | null = "now";
+  let pullRequest: { isMerged: boolean; state: string } | null = null;
+  let failRefresh = false;
+  const archived: string[] = [];
+  const context = { paseo: {
+    workspaces: { ref: (id: string) => ({
+      refresh: async () => {
+        if (failRefresh) throw new Error("Offline");
+        return { workspaceDirectory: cwd, githubRuntime: { pullRequest } };
+      },
+      archive: async () => { archived.push(id); return { error, archivedAt }; },
+    }) },
+    agents: { ref: () => ({
+      refresh: async () => ({ agent: { workspaceId: agentWorkspace, status } }),
+      send: async () => assert.fail("Operations must not send a prompt."),
+    }) },
+  } };
+  try {
+    const snapshot = await handlers.get("workflow.get")!({ workspaceId: "one", agentId: "old-agent" }, context) as ReadyWorkflow;
+    assert.equal(snapshot.toolsReady, false);
+    const input = { workspaceId: "one", agentId: "old-agent", action: "Archive", ...expected(snapshot, "implementing") };
+    const run = (patch = {}, ctx = context) => handlers.get("workflow.run-action")!({ ...input, ...patch }, ctx);
+    assert.equal(snapshot.actionConditions?.Archive.value, "false");
+    await assert.rejects(run(), /condition is no longer met/);
+    for (const state of ["OPEN", "CLOSED"]) {
+      pullRequest = { isMerged: false, state };
+      await assert.rejects(run(), /condition is no longer met/);
+    }
+    pullRequest = { isMerged: true, state: "MERGED" };
+    const merged = await handlers.get("workflow.get")!({ workspaceId: "one", agentId: "old-agent" }, context) as ReadyWorkflow;
+    assert.equal(merged.actionConditions?.Archive.value, "true");
+    // A changed attachment must invalidate the visible action at dispatch.
+    pullRequest = { isMerged: false, state: "OPEN" };
+    await assert.rejects(run(), /condition is no longer met/);
+    pullRequest = { isMerged: true, state: "MERGED" };
+    failRefresh = true;
+    await assert.rejects(run(), /Offline/);
+    failRefresh = false;
+    await assert.rejects(run({ expectedRevision: "stale" }), /workflow changed/);
+    await assert.rejects(run({ action: "Missing" }), /no longer available/);
+    await assert.rejects(run({ action: "Conditional archive" }));
+    status = "running";
+    await assert.rejects(run(), /Wait for this agent/);
+    status = "idle";
+    agentWorkspace = "other";
+    await assert.rejects(run(), /not in this workspace/);
+    agentWorkspace = "one";
+    assert.deepEqual(archived, []);
+    assert.deepEqual(await run(), { executed: true });
+    assert.deepEqual(archived, ["one"]);
+    error = "Workspace cannot be archived";
+    await assert.rejects(run(), /Workspace cannot be archived/);
+    error = null;
+    archivedAt = null;
+    await assert.rejects(run(), /did not archive/);
+    assert.equal(requireReady(await store.inspect("one", cwd)).revision, snapshot.revision);
   } finally {
     await cleanup();
     if (previous === undefined) delete process.env.PASEO_WORKFLOW_DATA_DIR;

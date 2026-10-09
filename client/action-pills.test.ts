@@ -48,6 +48,23 @@ test("action icons reach the host renderer and update with the configuration", (
   assert.equal(actionButtons(configured, false, async () => {})[1].icon, "ScanEye");
 });
 
+test("operation pills bypass MCP readiness but retain busy and condition checks", () => {
+  const configured = structuredClone(snapshot);
+  configured.toolsReady = false;
+  configured.workflow.actions = [{ label: "Archive", operation: "workspace.archive", when: "git.dirty" }];
+  configured.actionConditions = { Archive: { value: "true" } };
+  const buttons = actionButtons(configured, false, async () => {});
+  assert.equal(buttons[0].disabled, true);
+  assert.equal(buttons[2].disabled, false);
+  assert.equal(buttons[2].icon, "Archive");
+  assert.match(buttons[2].title, /managed worktree/);
+  assert.equal(actionButtons(configured, true, async () => {})[2].disabled, true);
+  configured.actionConditions.Archive = { value: "unknown" };
+  assert.equal(actionButtons(configured, false, async () => {})[2].disabled, true);
+  configured.actionConditions.Archive = { value: "false" };
+  assert.equal(actionButtons(configured, false, async () => {})[2].visible, false);
+});
+
 test("common action pills follow local actions and remain in states without local actions", () => {
   const configured = structuredClone(snapshot);
   configured.workflow.actions = [{ label: "Common", prompt: "Common prompt", icon: "Plus", when: "git.dirty" }];
