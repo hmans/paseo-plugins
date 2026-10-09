@@ -1,5 +1,5 @@
 {
-  "id": "paseoplugintest",
+  "id": "workspace-workflow",
   "name": "Workspace workflow",
   "description": "Project workflows with prompt actions and shared workspace state",
   "build": [["npm", "ci", "--omit=dev"]],
