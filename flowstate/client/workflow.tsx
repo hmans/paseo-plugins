@@ -45,7 +45,7 @@ export function WorkflowIcon(props: PluginButtonIconProps & { agentId: string; o
   const dispatch = send.mutateAsync;
   const label = query.isError || data?.status === "error" ? "Workflow error"
     : data?.status === "ready" ? data.workflow.states[data.state].label ?? data.state
-    : data?.status === "missing" ? "Set up workflow" : "Workflow";
+    : data?.status === "missing" ? "Set up workflow" : "Flowstate";
   useEffect(() => props.onLabel(label), [label, props.onLabel]);
   useEffect(() => {
     props.onActions(actionButtons(query.isError ? undefined : data, busy, dispatch, actionIcon));
@@ -89,7 +89,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
   if (query.isError || !snapshot || snapshot.status !== "ready") {
     const message = query.isError ? query.error.message : snapshot && snapshot.status !== "ready" ? snapshot.message : "Workflow is unavailable.";
     return <View style={{ gap: 12 }}>
-      <Text style={{ ...text, fontWeight: "600" }}>Workspace workflow</Text>
+      <Text style={{ ...text, fontWeight: "600" }}>Flowstate</Text>
       <Text selectable style={muted}>{message}</Text>
       <Pressable accessibilityRole="button" onPress={() => { void query.refetch(); }} style={{ paddingVertical: 10 }}>
         <Text style={{ color: colors.accent }}>Refresh workflow</Text>

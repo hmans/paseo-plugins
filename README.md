@@ -4,12 +4,12 @@ A collection of plugins for Paseo. Each plugin lives in its own directory and ca
 
 | Plugin | Description |
 | --- | --- |
-| [Workspace workflow](workspace-workflow/README.md) | Configurable workflow states, prompt actions, and Paseo operations in composer pills. |
+| [Flowstate](flowstate/README.md) | Configurable workflow states, prompt actions, and Paseo operations in composer pills. |
 
-## Install workspace workflow
+## Install Flowstate
 
 ```sh
-paseo plugin add git:hmans/paseo-plugins:workspace-workflow
+paseo plugin add git:hmans/paseo-plugins:flowstate
 ```
 
 Paseo installs the plugin's runtime dependencies through its manifest preparation command. Node.js and npm must be available on the daemon host.
@@ -17,7 +17,7 @@ Paseo installs the plugin's runtime dependencies through its manifest preparatio
 ## Develop
 
 ```sh
-cd workspace-workflow
+cd flowstate
 npm ci
 npm run typecheck
 npm test

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { isMissing } from "./store";
 import type { startWorkflowMcp } from "./mcp";
 
+// Keep the configuration key compatible with agents created before the Flowstate rename.
 export const MCP_NAME = "workspace-workflow";
 export const TOKEN_ENV = "PASEO_WORKFLOW_BOOTSTRAP_TOKEN";
 

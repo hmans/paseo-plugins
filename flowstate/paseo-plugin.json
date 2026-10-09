@@ -1,6 +1,6 @@
 {
-  "id": "workspace-workflow",
-  "name": "Workspace workflow",
+  "id": "flowstate",
+  "name": "Flowstate",
   "description": "Project workflows with prompt actions and shared workspace state",
   "build": [["npm", "ci", "--omit=dev"]],
   "media": [],

@@ -18,17 +18,17 @@ export function registerWorkflow(client: PluginClientContext) {
     const workspaceId = agent.workspaceId;
     const actions = createActionPills((id, button) => client.addComposerPill({ id, workspaceId, agentId: agent.id, button }));
     let registration: PluginButtonRegistration | undefined;
-    const onLabel = (label: string) => registration?.update({ label, title: `Workspace workflow: ${label}` });
+    const onLabel = (label: string) => registration?.update({ label, title: `Flowstate: ${label}` });
     function StateIcon(props: PluginButtonIconProps) { return <WorkflowIcon {...props} agentId={agent.id} onLabel={onLabel} onActions={actions.update} />; }
     registration = client.addComposerPill({
       id: "workflow", workspaceId: agent.workspaceId, agentId: agent.id,
-      button: { title: "Workspace workflow", label: "Workflow", icon: StateIcon, behavior: { kind: "popover", Content: WorkflowPopover } },
+      button: { title: "Flowstate", label: "Flowstate", icon: StateIcon, behavior: { kind: "popover", Content: WorkflowPopover } },
     });
     pills.set(agent.id, { workspaceId, remove() { actions.dispose(); registration?.remove(); } });
   }
 
-  client.addWorkspacePanel({ id: "workflow", title: "Workflow", icon: "GitBranch", context: "agent", Component: WorkflowPanel });
-  client.addCommandCenterItem({ id: "open-workflow", title: "Open workspace workflow", icon: "GitBranch", context: "agent", onSelect: ({ openPanel }) => openPanel("workflow") });
+  client.addWorkspacePanel({ id: "workflow", title: "Flowstate", icon: "GitBranch", context: "agent", Component: WorkflowPanel });
+  client.addCommandCenterItem({ id: "open-workflow", title: "Open Flowstate", icon: "GitBranch", context: "agent", onSelect: ({ openPanel }) => openPanel("workflow") });
   client.addSlashCommand({ name: "workflow", description: "Open this workspace's workflow actions", argumentHint: "", context: "agent", onSubmit: ({ openPanel }) => openPanel("workflow") });
 
   void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {

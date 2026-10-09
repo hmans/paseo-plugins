@@ -9,7 +9,7 @@ import { atomicWrite, errorMessage, isMissing, requireReady, WorkflowStore } fro
 import { WorkspaceBindings, type BoundWorkspace } from "./bindings";
 
 function createWorkflowMcp(store: WorkflowStore, scope: BoundWorkspace) {
-  const mcp = new McpServer({ name: "workspace-workflow", version: "0.1.0" }, {
+  const mcp = new McpServer({ name: "flowstate", version: "0.1.0" }, {
     instructions: "This workspace has a project workflow. Use workflow_get_state to read its state and available transitions. Use workflow_transition when the task's criteria are met. State is shared by all agents in this workspace. Do not edit saved state files.",
   });
   const result = async (operation: () => Promise<ReadyWorkflow>) => {

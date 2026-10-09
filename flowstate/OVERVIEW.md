@@ -1,4 +1,4 @@
-Workspace workflow gives each workspace a saved state, such as Planning, Implementing, or Reviewing. Available actions appear as composer pills that send prompts to the current agent or run supported Paseo operations. A separate state pill opens action descriptions and workflow controls. All agents in a workspace share the same state.
+Flowstate gives each workspace a saved state, such as Planning, Implementing, or Reviewing. Available actions appear as composer pills that send prompts to the current agent or run supported Paseo operations. A separate state pill opens action descriptions and workflow controls. All agents in a workspace share the same state.
 
 Define states, prompts, and allowed transitions in `.paseo/workflow.yaml` in your project checkout. Common actions can be defined once and appear after state-specific actions in every state. Newly created agents receive MCP tools to read or change their workspace state. Prompt buttons send exactly the configured text. Invalid transitions and requests based on old state are rejected. The agent decides when the work is ready for a transition; the plugin checks that the transition is allowed.
 

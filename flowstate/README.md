@@ -1,4 +1,4 @@
-# Workspace workflow
+# Flowstate
 
 A Paseo plugin that gives each workspace a saved state and a set of actions. Define the workflow in YAML. Actions appear directly as composer pills. Click one to send a prompt to the agent or run a supported Paseo operation. Agents can request allowed state transitions.
 
@@ -7,7 +7,7 @@ A Paseo plugin that gives each workspace a saved state and a set of actions. Def
 Requires Paseo 0.11.2 or later and an agent provider that supports HTTP MCP servers. No external service or API key is required. Agents use MCP tools; they do not need shell or file access to change workflow state.
 
 ```sh
-cd workspace-workflow
+cd flowstate
 npm install
 npm run typecheck
 npm test
@@ -17,17 +17,17 @@ paseo plugin install .
 Or install directly from GitHub:
 
 ```sh
-paseo plugin add git:hmans/paseo-plugins:workspace-workflow
+paseo plugin add git:hmans/paseo-plugins:flowstate
 ```
 
-Plugins must be enabled on the target daemon. This plugin's installation ID is `workspace-workflow`.
+Plugins must be enabled on the target daemon. This plugin's installation ID is `flowstate`.
 
 1. Add `.paseo/workflow.yaml` to the workspace checkout. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/workflow.yaml`](../.paseo/workflow.yaml).
 2. Create a new agent in that workspace after the plugin is running. Its composer shows a branch icon and the current state, such as **Planning**.
 3. Select an action pill to send its prompt or run its operation directly. Actions are disabled while that agent is running or initializing, or while an action is being dispatched. The state pill opens action descriptions, condition explanations, and command trust controls.
 4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
 
-Use `/workflow` or **Open workspace workflow** in the Command Center to open the actions in an agent panel.
+Use `/workflow` or **Open Flowstate** in the Command Center to open the actions in an agent panel.
 
 Agents created before MCP injection was installed need to be replaced with a new agent. The same applies if the workflow file was added after the agent was created. Paseo's current plugin API can inject MCP configuration on creation, but cannot add it to an existing agent. The UI explains this and disables its prompt actions. Creating a new agent in the same workspace preserves the workflow state.
 
@@ -153,7 +153,7 @@ Paseo supplies the workspace identity when the agent session opens. Tool calls c
 
 Before a transition, the agent reads the current state and supplies the target, expected state, revision, and definition version. The backend checks the allowed transition and rejects stale requests. Requests within a workspace are serialized. The plugin validates the transition graph; the agent and user decide whether the task's completion criteria are met.
 
-State survives plugin reloads and daemon restarts. State and MCP binding records are stored outside the checkout in `$PASEO_HOME/workspace-workflow`, defaulting to `~/.paseo/workspace-workflow`. Set `PASEO_WORKFLOW_DATA_DIR` in the daemon environment to choose another directory before creating agents. Run only one plugin installation per data directory.
+State survives plugin reloads and daemon restarts. State and MCP binding records are stored outside the checkout in `$PASEO_HOME/workspace-workflow`, defaulting to `~/.paseo/workspace-workflow`. Flowstate keeps this storage path and the `workspace-workflow` MCP configuration key for compatibility with existing agents and saved state. Set `PASEO_WORKFLOW_DATA_DIR` in the daemon environment to choose another directory before creating agents. Run only one plugin installation per data directory.
 
 The MCP server listens on daemon loopback. Each injected configuration contains a separate authorization token; only its hash is stored in the binding records. The server keeps its assigned port across reloads and restarts so saved agent configurations keep working. If another process occupies that port, startup fails rather than silently changing the URL. Paseo's normal MCP tool permission rules apply; the plugin does not auto-approve transitions.
 
@@ -166,9 +166,9 @@ If a definition is invalid, or its saved state has been removed, actions stop an
 ```sh
 npm run typecheck
 npm test
-paseo plugin reload workspace-workflow
+paseo plugin reload flowstate
 paseo plugin ls
-paseo plugin logs workspace-workflow
+paseo plugin logs flowstate
 ```
 
 The tests cover configuration validation, persistence, workspace isolation, stale and concurrent transitions, MCP discovery and tool calls through the official MCP client, reconnection after reload, creation/session hooks, and action dispatch. UI code uses React Native, Paseo theme colors, and compact layout spacing. Desktop UI has been checked in Paseo; native mobile verification remains to be done.
