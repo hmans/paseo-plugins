@@ -1,0 +1,49 @@
+initial: planning
+
+states:
+  planning:
+    label: Planning
+    actions:
+      - label: Explore requirements
+        prompt: |
+          Explore the requirements for the current task.
+          Identify open questions and discuss them with the user.
+          Stay in planning until a plan is agreed.
+      - label: Write a plan
+        prompt: |
+          Write a concrete implementation plan for the current task.
+          Ask the user to resolve any blocking decisions.
+          Once the plan is agreed, transition the workspace to implementing.
+    transitions: [implementing]
+
+  implementing:
+    label: Implementing
+    actions:
+      - label: Implement the plan
+        prompt: |
+          Implement the agreed plan and run the relevant checks.
+          When the changes are ready for review, transition to reviewing.
+      - label: Revisit the plan
+        prompt: |
+          Explain which parts of the plan need to change and why.
+          Transition to planning so we can revise it together.
+    transitions: [planning, reviewing]
+
+  reviewing:
+    label: Reviewing
+    actions:
+      - label: Review changes
+        prompt: |
+          Review the changes for correctness, regressions, and missing checks.
+          If fixes are needed, summarize them and transition to implementing.
+          Otherwise, report the verification results and transition to done.
+    transitions: [implementing, done]
+
+  done:
+    label: Done
+    actions:
+      - label: Start the next task
+        prompt: |
+          Summarize the completed work, then ask what we should tackle next.
+          Transition to planning for the next task.
+    transitions: [planning]

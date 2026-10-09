@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output and caches
+/dist/
+/build/
+/coverage/
+.cache/
+*.tsbuildinfo
+
+# Local environment files (keep templates)
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS and editor temporary files
+.DS_Store
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
