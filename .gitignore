@@ -2,9 +2,9 @@
 node_modules/
 
 # Build output and caches
-/dist/
-/build/
-/coverage/
+dist/
+build/
+coverage/
 .cache/
 *.tsbuildinfo
 

@@ -1,0 +1,10 @@
+{
+  "id": "paseoplugintest",
+  "name": "Workspace workflow",
+  "description": "Project workflows with prompt actions and shared workspace state",
+  "build": [["npm", "ci", "--omit=dev"]],
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.11.2"
+  }
+}
