@@ -26,7 +26,7 @@ states:
       - label: Make a commit
         icon: GitCommitHorizontal
         when: git.dirty
-        prompt: Review the uncommitted changes and make a Conventional Commit.
+        prompt: Review the uncommitted changes, make a Conventional Commit, and push if there already is a remote branch.
       - label: Implement the plan
         icon: Code
         prompt: |
