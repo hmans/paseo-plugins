@@ -146,11 +146,24 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
     {busy && !needsNewAgent && <Text style={muted}>Actions are available when this agent is ready for a new prompt.</Text>}
     {send.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{send.error.message}</Text>}
     {send.isSuccess && <Text style={{ ...text, color: colors.statusSuccess }}>Prompt sent to this agent.</Text>}
-    <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 4 }}>
-      <Text style={muted}>{state.transitions.length
-        ? `Can move to ${state.transitions.map(id => snapshot.workflow.states[id].label ?? id).join(", ")}.`
-        : "This state has no outgoing transitions."}</Text>
-      <Text style={muted}>State is shared by all agents in this workspace.</Text>
+    <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: layout.compact ? 12 : 16, gap: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <Icon name="ArrowRight" size={14} color={colors.foregroundMuted} />
+        <Text style={{ ...muted, fontWeight: "500" }}>{state.transitions.length ? "Next states" : "No next states"}</Text>
+      </View>
+      {state.transitions.length > 0 && <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {state.transitions.map(id => {
+          const next = snapshot.workflow.states[id];
+          return <View key={id} style={{
+            flexDirection: "row", alignItems: "center", gap: 7,
+            paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+            backgroundColor: colors.surface2, maxWidth: "100%",
+          }}>
+            <Icon name={next.icon ?? "GitBranch"} size={14} color={colors.accent} />
+            <Text style={{ ...text, fontSize: 13, fontWeight: "500", flexShrink: 1 }}>{next.label ?? id}</Text>
+          </View>;
+        })}
+      </View>}
     </View>
   </View>;
 }
