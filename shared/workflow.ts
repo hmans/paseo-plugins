@@ -13,24 +13,26 @@ const expression: z.ZodType<ConditionExpression> = z.lazy(() => z.union([
 const duration = z.string().regex(/^[1-9][0-9]*(ms|s|m)$/);
 export const conditionResultSchema = z.object({ value: z.enum(["true", "false", "unknown"]), message: z.string().optional() });
 export type ConditionResult = z.infer<typeof conditionResultSchema>;
+const actionSchema = z.object({ label: text, prompt: text, icon: iconName.optional(), when: expression.optional() }).strict();
 export const workflowSchema = z.object({
   initial: identifier,
+  actions: z.array(actionSchema).default([]),
   conditions: z.record(z.string().regex(/^project\.[a-z][a-z0-9_.-]*$/), z.object({
     command: z.array(z.string().min(1).refine(argument => !argument.includes("\0"), "Command arguments cannot contain null bytes.")).min(1), interval: duration.default("60s"), timeout: duration.default("10s"),
   }).strict()).default({}),
   states: z.record(identifier, z.object({
     label: text.optional(),
     icon: iconName.optional(),
-    actions: z.array(z.object({ label: text, prompt: text, icon: iconName.optional(), when: expression.optional() }).strict()).min(1),
+    actions: z.array(actionSchema).default([]),
     transitions: z.array(identifier).default([]),
   }).strict()),
 }).strict().superRefine((workflow, ctx) => {
   if (!Object.hasOwn(workflow.states, workflow.initial)) {
     ctx.addIssue({ code: "custom", path: ["initial"], message: "Initial state does not exist." });
   }
-  for (const [id, state] of Object.entries(workflow.states)) {
-    const labels = new Set<string>();
-    state.actions.forEach((action, index) => {
+  const commonLabels = new Set<string>();
+  const validateActions = (actions: z.infer<typeof actionSchema>[], labels: Set<string>, path: (string | number)[]) => {
+    actions.forEach((action, index) => {
       const validate = (value: ConditionExpression, depth = 0): void => {
         if (depth > 20) { ctx.addIssue({ code: "custom", message: "Condition nesting exceeds 20 levels." }); return; }
         if (typeof value === "string") {
@@ -39,15 +41,23 @@ export const workflowSchema = z.object({
         else ("all" in value ? value.all : value.any).forEach(child => validate(child, depth + 1));
       };
       if (action.when) validate(action.when);
-      if (labels.has(action.label)) ctx.addIssue({ code: "custom", path: ["states", id, "actions", index, "label"], message: "Action labels must be unique within a state." });
+      if (labels.has(action.label)) ctx.addIssue({ code: "custom", path: [...path, index, "label"], message: "Action labels must be unique across common actions and each state's actions." });
       labels.add(action.label);
     });
+  };
+  validateActions(workflow.actions, commonLabels, ["actions"]);
+  for (const [id, state] of Object.entries(workflow.states)) {
+    validateActions(state.actions, new Set(commonLabels), ["states", id, "actions"]);
     state.transitions.forEach((target, index) => {
       if (!Object.hasOwn(workflow.states, target)) ctx.addIssue({ code: "custom", path: ["states", id, "transitions", index], message: `Unknown state: ${target}.` });
     });
   }
 });
 export type Workflow = z.infer<typeof workflowSchema>;
+
+export function workflowActions(workflow: Workflow, state: string) {
+  return [...workflow.states[state].actions, ...workflow.actions];
+}
 
 export const readySchema = z.object({
   status: z.literal("ready"),

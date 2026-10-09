@@ -64,6 +64,17 @@ test("accepts optional state and action icons and rejects invalid name formats",
   }
 });
 
+test("validates common actions, collisions, and states without local actions", () => {
+  const common = { label: "Commit", prompt: "Commit the changes.", when: "git.dirty" };
+  const workflow = { initial: "one", actions: [common], states: { one: {}, two: { actions: [] } } };
+  assert.equal(parseWorkflow(JSON.stringify(workflow)).states.one.actions.length, 0);
+  assert.equal(parseWorkflow(JSON.stringify(workflow)).actions.length, 1);
+  assert.throws(() => parseWorkflow(JSON.stringify({ ...workflow, actions: [common, common] })), /unique/);
+  assert.throws(() => parseWorkflow(JSON.stringify({ ...workflow, states: { one: { actions: [common] } } })), /unique/);
+  assert.throws(() => parseWorkflow(JSON.stringify({ ...workflow, actions: [{ ...common, when: "unknown" }] })), /Unknown condition/);
+  assert.deepEqual(parseWorkflow(fixture).actions, []);
+});
+
 test("initializes once, isolates workspaces, and preserves state across a new store", async t => {
   const { cwd, store } = await setup(t);
   const initial = requireReady(await store.inspect("one", cwd));
@@ -238,14 +249,17 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     await store.transition("one", cwd, expected(snapshot, "implementing"));
     await assert.rejects(handlers.get("workflow.run-action")!(input, context), /workflow changed/);
     assert.equal(sent.length, 1);
-    await writeFile(file, fixture.replace("prompt: Implement the plan.", "prompt: Implement the plan.\n        when: project.check") + `conditions:\n  project.check:\n    command: ${JSON.stringify([process.execPath, "-e", "process.exit(1)"])}\n`);
+    await writeFile(file, fixture + `actions:\n  - label: Conditional common\n    prompt: Conditional prompt.\n    when: project.check\n  - label: Common\n    prompt: Common prompt.\nconditions:\n  project.check:\n    command: ${JSON.stringify([process.execPath, "-e", "process.exit(1)"])}\n`);
     const conditional = await handlers.get("workflow.get")!({ workspaceId: "one", agentId: "selected-agent" }, context) as ReadyWorkflow;
-    assert.equal(conditional.actionConditions?.Implement.value, "unknown");
+    assert.equal(conditional.actionConditions?.["Conditional common"].value, "unknown");
     await assert.rejects(handlers.get("workflow.command-trust")!({ workspaceId: "one", definitionVersion: "stale", trusted: true }, context), /Workflow changed/);
     await handlers.get("workflow.command-trust")!({ workspaceId: "one", definitionVersion: conditional.definitionVersion, trusted: true }, context);
-    const conditionalInput = { workspaceId: "one", agentId: "selected-agent", action: "Implement", ...expected(conditional, "planning") };
+    const conditionalInput = { workspaceId: "one", agentId: "selected-agent", action: "Conditional common", ...expected(conditional, "planning") };
     await assert.rejects(handlers.get("workflow.run-action")!(conditionalInput, context), /condition is no longer met/);
     assert.equal(sent.length, 1);
+    await handlers.get("workflow.run-action")!({ ...conditionalInput, action: "Common" }, context);
+    assert.deepEqual(sent[1], { agentId: "selected-agent", text: "Common prompt." });
+    assert.equal(requireReady(await store.inspect("one", cwd)).state, "implementing");
   } finally {
     await cleanup();
     if (previous === undefined) delete process.env.PASEO_WORKFLOW_DATA_DIR;

@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentProps, type PluginButtonIconProps, type PluginButton } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { getWorkflow, runAction, setCommandTrust } from "../shared/workflow";
+import { getWorkflow, runAction, setCommandTrust, workflowActions } from "../shared/workflow";
 import { actionButtons } from "./action-pills";
 
 function actionIcon(name: string) {
@@ -98,6 +98,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
   }
 
   const state = snapshot.workflow.states[snapshot.state];
+  const actions = workflowActions(snapshot.workflow, snapshot.state);
   const needsNewAgent = snapshot.toolsReady === false;
   const disabled = busy || send.isPending || needsNewAgent;
   return <View style={{ gap: layout.compact ? 14 : 18 }}>
@@ -115,7 +116,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
       {trust.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{trust.error.message}</Text>}
     </View>}
     <View style={{ gap: 8 }}>
-      {state.actions.filter(action => snapshot.actionConditions?.[action.label]?.value !== "false").map(action => {
+      {actions.filter(action => snapshot.actionConditions?.[action.label]?.value !== "false").map(action => {
         const condition = snapshot.actionConditions?.[action.label];
         const actionDisabled = disabled || (!!action.when && condition?.value !== "true");
         return <Pressable
@@ -141,7 +142,8 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
         <Text numberOfLines={3} style={muted}>{action.prompt}</Text>
         {action.when && condition?.value !== "true" && <Text style={{ ...muted, color: colors.statusWarning }}>{condition?.message ?? "Checking condition…"}</Text>}
       </Pressable>; })}
-      {state.actions.every(action => snapshot.actionConditions?.[action.label]?.value === "false") && <Text style={muted}>No actions match the current workspace conditions.</Text>}
+      {actions.length === 0 ? <Text style={muted}>No actions configured for this state.</Text>
+        : actions.every(action => snapshot.actionConditions?.[action.label]?.value === "false") && <Text style={muted}>No actions match the current workspace conditions.</Text>}
     </View>
     {busy && !needsNewAgent && <Text style={muted}>Actions are available when this agent is ready for a new prompt.</Text>}
     {send.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{send.error.message}</Text>}

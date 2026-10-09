@@ -1,5 +1,14 @@
 initial: planning
 
+actions:
+  - label: Make a commit
+    icon: GitCommitHorizontal
+    when: git.dirty
+    prompt: |
+      Review the uncommitted changes and make a Conventional Commit.
+      If the current branch has a configured upstream, push to it.
+      Otherwise, leave the commit local.
+
 states:
   planning:
     label: Planning
@@ -23,10 +32,6 @@ states:
     label: Implementing
     icon: Code
     actions:
-      - label: Make a commit
-        icon: GitCommitHorizontal
-        when: git.dirty
-        prompt: Review the uncommitted changes, make a Conventional Commit, and push if there already is a remote branch.
       - label: Implement the plan
         icon: Code
         prompt: |
@@ -43,10 +48,6 @@ states:
     label: Reviewing
     icon: ScanEye
     actions:
-      - label: Make a commit
-        icon: GitCommitHorizontal
-        when: git.dirty
-        prompt: Review the uncommitted changes, make a Conventional Commit, and push if there already is a remote branch.
       - label: Review changes
         icon: ScanEye
         prompt: |

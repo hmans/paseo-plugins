@@ -1,9 +1,10 @@
 import type { PluginButton, PluginButtonIcon, PluginButtonRegistration } from "@getpaseo/plugin/client";
 import type { WorkflowSnapshot } from "../shared/workflow";
+import { workflowActions } from "../shared/workflow";
 
 export function actionButtons(snapshot: WorkflowSnapshot | undefined, busy: boolean, onPress: (label: string) => Promise<void>, renderIcon: (name: string) => PluginButtonIcon = name => name): PluginButton[] {
   if (snapshot?.status !== "ready") return [];
-  return snapshot.workflow.states[snapshot.state].actions.map(action => {
+  return workflowActions(snapshot.workflow, snapshot.state).map(action => {
     const condition = snapshot.actionConditions?.[action.label];
     const reason = snapshot.toolsReady === false ? "Create a new agent to load workflow tools."
       : action.when && condition?.value !== "true" ? condition?.message ?? "Condition is not met."

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConditionExpression, ConditionResult, ReadyWorkflow } from "../shared/workflow";
+import { workflowActions } from "../shared/workflow";
 import { atomicWrite, isMissing } from "./store";
 
 const builtins: Record<string, { interval: number; run(cwd: string, signal: AbortSignal, timeout: number): Promise<ConditionResult> }> = {
@@ -146,7 +147,7 @@ export class Conditions {
       return promise;
     };
     const actionConditions: Record<string, ConditionResult> = Object.create(null);
-    for (const action of snapshot.workflow.states[snapshot.state].actions) {
+    for (const action of workflowActions(snapshot.workflow, snapshot.state)) {
       if (actionLabel && action.label !== actionLabel) continue;
       actionConditions[action.label] = action.when ? await evaluate(action.when, resolve) : value(true);
     }

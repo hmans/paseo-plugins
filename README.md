@@ -51,13 +51,35 @@ states:
 
 - `initial` must name a defined state.
 - State IDs start with a lowercase letter and contain lowercase letters, numbers, underscores, or hyphens.
-- Each state has one or more actions. Each action needs a nonempty `label` and `prompt`. Action labels must be unique within that state.
+- Each action needs a nonempty `label` and `prompt`. Action labels must be unique within a state and must not collide with common action labels. A state's `actions` can be empty or omitted.
 - `label` on a state is optional; the UI uses the state ID when it is absent.
 - `icon` on a state or action is an optional PascalCase [Lucide icon name](https://lucide.dev/icons/), such as `ScanEye` or `GitCommitHorizontal`. State icons appear in the state pill; action icons appear in both action pills and the expanded list. Defaults are `GitBranch` for states and `Send` for actions. Paseo supplies the icon set: unknown names render no icon, while invalid name formats produce a configuration error. Image paths and SVG markup are not supported.
 - `transitions` lists the allowed destination state IDs. An omitted or empty list makes the state terminal.
 - Unknown fields, duplicate YAML keys, and YAML aliases are rejected. The file size limit is 256 KiB.
 
 The plugin reads the definition from the workspace's own directory, including its worktree. Commit it to share it with the project. Saving a valid edit updates an open workflow UI within about two seconds; a plugin reload is not needed for YAML changes.
+
+## Common actions
+
+Top-level `actions` are available in every state, after that state's own actions. They support the same icons, conditions, and dispatch checks. They do not automatically change the workflow state.
+
+```yaml
+initial: planning
+actions:
+  - label: Make a commit
+    icon: GitCommitHorizontal
+    when: git.dirty
+    prompt: |
+      Review the uncommitted changes and make a Conventional Commit.
+      If the current branch has a configured upstream, push to it.
+      Otherwise, leave the commit local.
+states:
+  planning:
+    actions: []
+    transitions: []
+```
+
+Common action labels must be unique. A collision with a state action is a configuration error; neither action overrides the other. Omit top-level `actions` if you only need state-specific actions.
 
 ## Conditional actions
 

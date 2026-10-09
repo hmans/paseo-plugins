@@ -6,7 +6,7 @@ import { actionButtons, createActionPills } from "./action-pills";
 
 const snapshot: ReadyWorkflow = {
   status: "ready", workspaceId: "one", state: "working", revision: "one", definitionVersion: "one", updatedAt: "now", toolsReady: true,
-  workflow: { initial: "working", conditions: {}, states: { working: { actions: [
+  workflow: { initial: "working", conditions: {}, actions: [], states: { working: { actions: [
     { label: "Review", prompt: "Review the work." },
     { label: "Commit", prompt: "Make a commit.", when: "git.dirty" },
   ], transitions: [] } } },
@@ -46,6 +46,19 @@ test("action icons reach the host renderer and update with the configuration", (
   assert.deepEqual(names, ["Send", "GitCommitHorizontal"]);
   configured.workflow.states.working.actions[1].icon = "ScanEye";
   assert.equal(actionButtons(configured, false, async () => {})[1].icon, "ScanEye");
+});
+
+test("common action pills follow local actions and remain in states without local actions", () => {
+  const configured = structuredClone(snapshot);
+  configured.workflow.actions = [{ label: "Common", prompt: "Common prompt", icon: "Plus", when: "git.dirty" }];
+  configured.actionConditions = { Common: { value: "true" } };
+  const buttons = () => actionButtons(configured, false, async () => {});
+  assert.deepEqual(buttons().map(button => button.label), ["Review", "Commit", "Common"]);
+  configured.workflow.states.working.actions = [];
+  assert.deepEqual(buttons().map(button => button.label), ["Common"]);
+  assert.equal(buttons()[0].icon, "Plus");
+  configured.actionConditions.Common = { value: "false" };
+  assert.equal(buttons()[0].visible, false);
 });
 
 test("pill registrations update, remove obsolete actions, and ignore late updates after cleanup", () => {

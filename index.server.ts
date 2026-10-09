@@ -1,7 +1,7 @@
 import type { PluginServerContext, PluginHandlerContext } from "@getpaseo/plugin/server";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getWorkflow, runAction, setCommandTrust } from "./shared/workflow";
+import { getWorkflow, runAction, setCommandTrust, workflowActions } from "./shared/workflow";
 import { Conditions } from "./server/conditions";
 import { assertCurrent, errorMessage, requireReady, WorkflowStore } from "./server/store";
 import { startWorkflowMcp } from "./server/mcp";
@@ -53,7 +53,7 @@ export default function contribute(server: PluginServerContext) {
       if (!service.bindings.hasAgent(input.agentId, input.workspaceId)) throw new Error("Create a new agent in this workspace to load the workflow MCP tools. Existing agents cannot receive the injected configuration.");
       const snapshot = requireReady(await store.read(input.workspaceId, cwd));
       assertCurrent(snapshot, input);
-      const action = snapshot.workflow.states[snapshot.state].actions.find(action => action.label === input.action);
+      const action = workflowActions(snapshot.workflow, snapshot.state).find(action => action.label === input.action);
       if (!action) throw new Error("This action is no longer available. Refresh the workflow.");
       const result = (await conditions.results(snapshot, cwd, true, action.label)).actionConditions[action.label];
       if (result.value !== "true") throw new Error(result.message ?? "This action's condition is no longer met.");
