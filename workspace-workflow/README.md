@@ -7,7 +7,7 @@ A Paseo plugin that gives each workspace a saved state and a set of actions. Def
 Requires Paseo 0.11.2 or later and an agent provider that supports HTTP MCP servers. No external service or API key is required. Agents use MCP tools; they do not need shell or file access to change workflow state.
 
 ```sh
-cd plugins/workflow
+cd workspace-workflow
 npm install
 npm run typecheck
 npm test
@@ -17,12 +17,12 @@ paseo plugin install .
 Or install directly from GitHub:
 
 ```sh
-paseo plugin add github:hmans/paseo-plugins:plugins/workflow
+paseo plugin add git:hmans/paseo-plugins:workspace-workflow
 ```
 
-Plugins must be enabled on the target daemon. This plugin's installation ID is `paseoplugintest`.
+Plugins must be enabled on the target daemon. This plugin's installation ID is `workspace-workflow`.
 
-1. Add `.paseo/workflow.yaml` to the workspace checkout. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/workflow.yaml`](../../.paseo/workflow.yaml).
+1. Add `.paseo/workflow.yaml` to the workspace checkout. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/workflow.yaml`](../.paseo/workflow.yaml).
 2. Create a new agent in that workspace after the plugin is running. Its composer shows a branch icon and the current state, such as **Planning**.
 3. Select an action pill to send its prompt or run its operation directly. Actions are disabled while that agent is running or initializing, or while an action is being dispatched. The state pill opens action descriptions, condition explanations, and command trust controls.
 4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
@@ -166,9 +166,9 @@ If a definition is invalid, or its saved state has been removed, actions stop an
 ```sh
 npm run typecheck
 npm test
-paseo plugin reload paseoplugintest
+paseo plugin reload workspace-workflow
 paseo plugin ls
-paseo plugin logs paseoplugintest
+paseo plugin logs workspace-workflow
 ```
 
 The tests cover configuration validation, persistence, workspace isolation, stale and concurrent transitions, MCP discovery and tool calls through the official MCP client, reconnection after reload, creation/session hooks, and action dispatch. UI code uses React Native, Paseo theme colors, and compact layout spacing. Desktop UI has been checked in Paseo; native mobile verification remains to be done.
