@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentProps, type PluginButtonIconProps } from "@getpaseo/plugin/client";
+import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentProps, type PluginButtonIconProps, type PluginButton } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { getWorkflow, runAction, setCommandTrust } from "../shared/workflow";
+import { actionButtons } from "./action-pills";
 
 function useWorkflow(workspaceId: string, agentId?: string) {
   const get = useRpc(getWorkflow);
@@ -16,13 +17,34 @@ function useWorkflow(workspaceId: string, agentId?: string) {
   });
 }
 
-export function WorkflowIcon(props: PluginButtonIconProps & { onLabel(label: string): void }) {
-  const query = useWorkflow(props.workspaceId, props.context === "agent" ? props.agentId : undefined);
+export function WorkflowIcon(props: PluginButtonIconProps & { agentId: string; onLabel(label: string): void; onActions(buttons: PluginButton[]): void }) {
+  const query = useWorkflow(props.workspaceId, props.agentId);
+  const agent = useAgent(props.agentId, agent => ({ status: agent.status }));
+  const run = useRpc(runAction);
+  const queryClient = useQueryClient();
+  const sending = useRef(false);
   const data = query.data;
+  const send = useMutation({
+    mutationFn: async (action: string) => {
+      if (sending.current) throw new Error("A workflow action is already being sent.");
+      if (query.isError || data?.status !== "ready") throw new Error("Workflow is unavailable. Open the state pill for details.");
+      sending.current = true;
+      try {
+        await run({ workspaceId: props.workspaceId, agentId: props.agentId, action, expectedState: data.state, expectedRevision: data.revision, definitionVersion: data.definitionVersion });
+      } finally { sending.current = false; }
+    },
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workflow", props.workspaceId] }); },
+  });
+  const busy = !agent || agent.status === "running" || agent.status === "initializing" || send.isPending;
+  const dispatch = send.mutateAsync;
   const label = query.isError || data?.status === "error" ? "Workflow error"
     : data?.status === "ready" ? data.workflow.states[data.state].label ?? data.state
     : data?.status === "missing" ? "Set up workflow" : "Workflow";
   useEffect(() => props.onLabel(label), [label, props.onLabel]);
+  useEffect(() => {
+    props.onActions(actionButtons(query.isError ? undefined : data, busy, dispatch));
+  }, [data, query.isError, busy, dispatch, props.onActions]);
+  useEffect(() => () => props.onActions([]), [props.onActions]);
   return <Icon name="GitBranch" size={props.size} color={props.color} />;
 }
 

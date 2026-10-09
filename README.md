@@ -1,6 +1,6 @@
 # Workspace workflow
 
-A Paseo plugin that gives each workspace a saved state and a set of prompt actions. Define the workflow in YAML. Click an action to send its prompt to the agent whose composer you are using. The agent can then request an allowed state transition.
+A Paseo plugin that gives each workspace a saved state and a set of prompt actions. Define the workflow in YAML. Actions appear directly as composer pills. Click one to send its prompt to that agent. The agent can then request an allowed state transition.
 
 ## Try it
 
@@ -17,7 +17,7 @@ Plugins must be enabled on the target daemon. This plugin's installation ID is `
 
 1. Add `.paseo/workflow.yaml` to the workspace checkout. This project includes a Planning → Implementing → Reviewing → Done example.
 2. Create a new agent in that workspace after the plugin is running. Its composer shows a branch icon and the current state, such as **Planning**.
-3. Select the pill, then select a prompt. Actions are disabled while that agent is running or initializing.
+3. Select an action pill to send its prompt directly. Actions are disabled while that agent is running or initializing, or while a prompt is being sent. The state pill still opens the full prompts, condition explanations, and command trust controls.
 4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
 
 Use `/workflow` or **Open workspace workflow** in the Command Center to open the actions in an agent panel.

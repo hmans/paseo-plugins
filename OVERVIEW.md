@@ -1,4 +1,4 @@
-Workspace workflow gives each workspace a saved state, such as Planning, Implementing, or Reviewing. Its composer pill shows that state and opens prompt buttons for the current agent. All agents in a workspace share the same state.
+Workspace workflow gives each workspace a saved state, such as Planning, Implementing, or Reviewing. Available actions appear as composer pills that send their prompts directly to the current agent. A separate state pill opens full prompt descriptions and workflow controls. All agents in a workspace share the same state.
 
 Define states, prompts, and allowed transitions in `.paseo/workflow.yaml` in your project checkout. Newly created agents receive MCP tools to read or change their workspace state. Prompt buttons send exactly the configured text. Invalid transitions and requests based on old state are rejected. The agent decides when the work is ready for a transition; the plugin checks that the transition is allowed.
 
