@@ -45,5 +45,6 @@ states:
       - label: Start the next task
         prompt: |
           Summarize the completed work, then ask what we should tackle next.
+          Perform a git fetch, then move this worktree to a new branch off of origin/main.
           Transition to planning for the next task.
     transitions: [planning]

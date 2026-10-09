@@ -5,11 +5,11 @@ import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentP
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { getWorkflow, runAction } from "../shared/workflow";
 
-function useWorkflow(workspaceId: string) {
+function useWorkflow(workspaceId: string, agentId?: string) {
   const get = useRpc(getWorkflow);
   return useQuery({
-    queryKey: ["workflow", workspaceId],
-    queryFn: () => get({ workspaceId }),
+    queryKey: ["workflow", workspaceId, agentId],
+    queryFn: () => get({ workspaceId, agentId }),
     refetchInterval: 2000,
     staleTime: 1000,
     retry: false,
@@ -17,7 +17,7 @@ function useWorkflow(workspaceId: string) {
 }
 
 export function WorkflowIcon(props: PluginButtonIconProps & { onLabel(label: string): void }) {
-  const query = useWorkflow(props.workspaceId);
+  const query = useWorkflow(props.workspaceId, props.context === "agent" ? props.agentId : undefined);
   const data = query.data;
   const label = query.isError || data?.status === "error" ? "Workflow error"
     : data?.status === "ready" ? data.workflow.states[data.state].label ?? data.state
@@ -29,7 +29,7 @@ export function WorkflowIcon(props: PluginButtonIconProps & { onLabel(label: str
 type ActionsProps = Pick<PluginAgentPanelProps, "workspaceId" | "agentId" | "theme" | "layout"> & { onSent?(): void };
 
 function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: ActionsProps) {
-  const query = useWorkflow(workspaceId);
+  const query = useWorkflow(workspaceId, agentId);
   const queryClient = useQueryClient();
   const run = useRpc(runAction);
   const agent = useAgent(agentId, agent => ({ status: agent.status }));
@@ -60,12 +60,14 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
   }
 
   const state = snapshot.workflow.states[snapshot.state];
-  const disabled = busy || send.isPending;
+  const needsNewAgent = snapshot.toolsReady === false;
+  const disabled = busy || send.isPending || needsNewAgent;
   return <View style={{ gap: layout.compact ? 14 : 18 }}>
     <View style={{ gap: 5 }}>
       <Text style={{ color: colors.foreground, fontSize: 22, fontWeight: "600" }}>{state.label ?? snapshot.state}</Text>
       <Text style={muted}>Choose a prompt to send to this agent.</Text>
     </View>
+    {needsNewAgent && <Text style={{ ...muted, color: colors.statusWarning }}>Create a new agent in this workspace to load the workflow tools. This agent was created without them. Your workspace state will stay the same.</Text>}
     <View style={{ gap: 8 }}>
       {state.actions.map(action => <Pressable
         key={action.label}
@@ -88,7 +90,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
         <Text numberOfLines={3} style={muted}>{action.prompt}</Text>
       </Pressable>)}
     </View>
-    {busy && <Text style={muted}>Actions are available when this agent is ready for a new prompt.</Text>}
+    {busy && !needsNewAgent && <Text style={muted}>Actions are available when this agent is ready for a new prompt.</Text>}
     {send.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{send.error.message}</Text>}
     {send.isSuccess && <Text style={{ ...text, color: colors.statusSuccess }}>Prompt sent to this agent.</Text>}
     <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 4 }}>

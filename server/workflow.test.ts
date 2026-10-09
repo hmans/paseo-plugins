@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { test, type TestContext } from "node:test";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import contribute from "../index.server";
-import { startBridge } from "./bridge";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { startWorkflowMcp } from "./mcp";
+import { MCP_NAME, TOKEN_ENV, registerMcpInjection } from "./injection";
 import { assertCurrent, parseWorkflow, requireReady, WorkflowStore } from "./store";
-import type { ReadyWorkflow } from "../shared/workflow";
+import { readySchema, type ReadyWorkflow } from "../shared/workflow";
 
 const fixture = `initial: planning
 states:
@@ -107,30 +108,74 @@ test("does not silently reset removed states or corrupt saved data", async t => 
   assert.equal(await readFile(join(store.directory, stateFile), "utf8"), "broken json");
 });
 
-test("command bridge enforces bindings and transitions, and existing commands survive reload", async t => {
+test("MCP discovers tools, scopes calls, rejects stale transitions, and reconnects after reload", async t => {
   const { cwd, store } = await setup(t);
-  let bridge = await startBridge(store);
+  let service = await startWorkflowMcp(store);
+  const client = new Client({ name: "workflow-test", version: "1.0.0" });
   try {
-    const binding = bridge.binding("one", cwd);
-    const run = async (...args: string[]) => JSON.parse((await promisify(execFile)(process.execPath, [bridge.cliPath, binding, ...args])).stdout);
-    const initial = await run("get") as ReadyWorkflow;
-    const response = await fetch(bridge.url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ binding: `${binding}x`, command: "get" }),
-    });
-    assert.equal(response.status, 400);
-    const originRequest = await fetch(bridge.url, { method: "POST", headers: { Origin: "https://example.com" }, body: "{}" });
-    assert.equal(originRequest.status, 403);
-    await assert.rejects(run("transition", "unknown", initial.state, initial.revision, initial.definitionVersion), /not allowed/);
-    const next = await run("transition", "implementing", initial.state, initial.revision, initial.definitionVersion);
+    const token = await service.bindings.issue(cwd);
+    assert.equal((await fetch(service.url, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: "{}" })).status, 403);
+    await service.bindings.bind(token, "agent-one", "one", cwd);
+    await assert.rejects(service.bindings.bind(token, "agent-two", "two", cwd), /another agent or workspace/);
+    await client.connect(new StreamableHTTPClientTransport(new URL(service.url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+    const tools = await client.listTools();
+    assert.deepEqual(tools.tools.map(tool => tool.name).sort(), ["workflow_get_state", "workflow_transition"]);
+    const read = async () => readySchema.parse((await client.callTool({ name: "workflow_get_state", arguments: {} })).structuredContent);
+    const initial = await read();
+    assert.equal(initial.workspaceId, "one");
+    const invalid = await client.callTool({ name: "workflow_transition", arguments: expected(initial, "unknown") });
+    assert.equal(invalid.isError, true);
+    const crossWorkspace = await client.callTool({ name: "workflow_transition", arguments: { ...expected(initial, "implementing"), workspaceId: "two" } });
+    assert.equal(crossWorkspace.isError, true);
+    const next = readySchema.parse((await client.callTool({ name: "workflow_transition", arguments: expected(initial, "implementing") })).structuredContent);
     assert.equal(next.state, "implementing");
-    await bridge.close();
-    bridge = await startBridge(new WorkflowStore(store.directory));
-    assert.equal((await run("get")).state, "implementing");
-    const command = bridge.instructions(next, cwd).split("\n").find(line => line.startsWith("Read current state: "))!.slice("Read current state: ".length);
-    const shellResult = await promisify(execFile)("/bin/sh", ["-c", command]);
-    assert.equal(JSON.parse(shellResult.stdout).state, "implementing");
-  } finally { await bridge.close(); }
+    assert.equal((await client.callTool({ name: "workflow_transition", arguments: expected(initial, "implementing") })).isError, true);
+    assert.equal(requireReady(await store.inspect("two", cwd)).state, "planning");
+    assert.equal((await fetch(service.url, { method: "POST", body: "{}" })).status, 403);
+    assert.equal((await fetch(service.url, { method: "POST", headers: { Origin: "https://example.com", Authorization: `Bearer ${token}` }, body: "{}" })).status, 403);
+    const originalUrl = service.url;
+    await service.close();
+    service = await startWorkflowMcp(new WorkflowStore(store.directory));
+    assert.equal(service.url, originalUrl);
+    assert.equal((await read()).state, "implementing");
+    assert.equal(service.bindings.hasAgent("agent-one", "one"), true);
+  } finally { await client.close(); await service.close(); }
+});
+
+test("injection preserves configuration, binds actual workspace IDs, and supports resume", async t => {
+  const { cwd, store, root } = await setup(t);
+  const service = await startWorkflowMcp(store);
+  const hooks = new Map<string, (input: any) => Promise<any>>();
+  registerMcpInjection({ before: (name: string, handler: any) => { hooks.set(name, handler); return () => {}; } } as unknown as PluginServerContext, Promise.resolve(service));
+  try {
+    const existingMcp = { type: "http", url: "https://example.com/mcp" };
+    const request = { config: { provider: "codex", cwd, title: "Keep title", mcpServers: { existing: existingMcp }, providerOptions: { keep: true } }, env: { KEEP: "yes" } };
+    const injected = await hooks.get("agent.create")!({ request });
+    assert.deepEqual(injected.config.mcpServers.existing, existingMcp);
+    assert.deepEqual(injected.config.providerOptions, request.config.providerOptions);
+    assert.equal(injected.config.cwd, cwd);
+    assert.equal(injected.env.KEEP, "yes");
+    const mcp = injected.config.mcpServers[MCP_NAME];
+    assert.equal(mcp.type, "http");
+    assert.equal(mcp.url, service.url);
+    assert.equal(mcp.headers.Authorization, `Bearer ${injected.env[TOKEN_ENV]}`);
+    assert.equal(service.bindings.resolve(injected.env[TOKEN_ENV]), null);
+    const opened = await hooks.get("agent.session_open")!({ request: { agentId: "new-agent", workspaceId: "one", cwd, purpose: "interactive", reason: "create", env: injected.env } });
+    assert.equal(opened.env[TOKEN_ENV], undefined);
+    assert.equal(opened.env.KEEP, "yes");
+    assert.equal(service.bindings.hasAgent("new-agent", "one"), true);
+    await hooks.get("agent.session_open")!({ request: { agentId: "new-agent", workspaceId: "one", cwd, purpose: "interactive", reason: "resume", env: {} } });
+    assert.equal(service.bindings.hasAgent("new-agent", "one"), true);
+    await assert.rejects(hooks.get("agent.session_open")!({ request: { agentId: "new-agent", workspaceId: "two", cwd, purpose: "interactive", env: {} } }), /cannot move/);
+    const second = await hooks.get("agent.create")!({ request });
+    await hooks.get("agent.session_open")!({ request: { agentId: "second-agent", workspaceId: "two", cwd, purpose: "interactive", env: second.env } });
+    assert.equal(service.bindings.resolve(second.env[TOKEN_ENV])?.workspaceId, "two");
+    assert.equal(service.bindings.resolve(injected.env[TOKEN_ENV])?.workspaceId, "one");
+    assert.equal(await hooks.get("agent.create")!({ request: { config: { cwd: root }, env: {} } }), undefined);
+    await assert.rejects(hooks.get("agent.create")!({ request: { config: { ...request.config, mcpServers: { [MCP_NAME]: existingMcp } } } }), /unrelated MCP server/);
+    const cloned = await hooks.get("agent.create")!({ request: injected });
+    assert.notEqual(cloned.env[TOKEN_ENV], injected.env[TOKEN_ENV]);
+  } finally { await service.close(); }
 });
 
 test("action RPC sends only to the selected agent and rejects busy or stale requests", async t => {
@@ -138,7 +183,11 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
   const previous = process.env.PASEO_WORKFLOW_DATA_DIR;
   process.env.PASEO_WORKFLOW_DATA_DIR = store.directory;
   const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
-  const cleanup = contribute({ handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler) } as unknown as PluginServerContext);
+  const hooks = new Map<string, (input: any) => Promise<any>>();
+  const cleanup = contribute({
+    handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler),
+    before: (name: string, handler: any) => { hooks.set(name, handler); return () => {}; },
+  } as unknown as PluginServerContext);
   let status = "idle";
   let workspaceId = "one";
   const sent: { agentId: string; text: string }[] = [];
@@ -147,12 +196,19 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     agents: { ref: (agentId: string) => ({ refresh: async () => ({ agent: { workspaceId, status } }), send: async (text: string) => { sent.push({ agentId, text }); } }) },
   } };
   try {
-    const snapshot = await handlers.get("workflow.get")!({ workspaceId: "one" }, context) as ReadyWorkflow;
+    const before = await handlers.get("workflow.get")!({ workspaceId: "one", agentId: "selected-agent" }, context) as ReadyWorkflow;
+    assert.equal(before.toolsReady, false);
+    const initialInput = { workspaceId: "one", agentId: "selected-agent", action: "Plan", ...expected(before, "implementing") };
+    await assert.rejects(handlers.get("workflow.run-action")!(initialInput, context), /Create a new agent/);
+    const injected = await hooks.get("agent.create")!({ request: { config: { provider: "codex", cwd } } });
+    await hooks.get("agent.session_open")!({ request: { agentId: "selected-agent", workspaceId: "one", cwd, purpose: "interactive", env: injected.env } });
+    const snapshot = await handlers.get("workflow.get")!({ workspaceId: "one", agentId: "selected-agent" }, context) as ReadyWorkflow;
+    assert.equal(snapshot.toolsReady, true);
     const input = { workspaceId: "one", agentId: "selected-agent", action: "Plan", ...expected(snapshot, "implementing") };
     await handlers.get("workflow.run-action")!(input, context);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].agentId, "selected-agent");
-    assert.match(sent[0].text, /^Write a plan\.\n\nWorkspace workflow instructions:/);
+    assert.equal(sent[0].text, "Write a plan.");
     assert.equal(requireReady(await store.inspect("one", cwd)).state, "planning");
     status = "running";
     await assert.rejects(handlers.get("workflow.run-action")!(input, context), /Wait for this agent/);

@@ -3,13 +3,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { getWorkflow, runAction } from "./shared/workflow";
 import { assertCurrent, errorMessage, requireReady, WorkflowStore } from "./server/store";
-import { startBridge } from "./server/bridge";
+import { startWorkflowMcp } from "./server/mcp";
+import { registerMcpInjection } from "./server/injection";
 
 export default function contribute(server: PluginServerContext) {
   const directory = process.env.PASEO_WORKFLOW_DATA_DIR ?? join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "workspace-workflow");
   const store = new WorkflowStore(directory);
-  const bridge = startBridge(store);
-  void bridge.catch(error => console.error("Workflow bridge failed:", errorMessage(error)));
+  const mcp = startWorkflowMcp(store);
+  void mcp.catch(error => console.error("Workflow MCP failed:", errorMessage(error)));
+  registerMcpInjection(server, mcp);
 
   async function workspaceDirectory(workspaceId: string, { paseo }: PluginHandlerContext) {
     const workspace = await paseo.workspaces.ref(workspaceId).refresh();
@@ -17,30 +19,34 @@ export default function contribute(server: PluginServerContext) {
     return workspace.workspaceDirectory;
   }
 
-  server.handle(getWorkflow, async ({ workspaceId }, context) => {
+  server.handle(getWorkflow, async ({ workspaceId, agentId }, context) => {
     try {
       const cwd = await workspaceDirectory(workspaceId, context);
-      await bridge;
-      return await store.inspect(workspaceId, cwd);
+      const service = await mcp;
+      const snapshot = await store.inspect(workspaceId, cwd);
+      return snapshot.status === "ready"
+        ? { ...snapshot, toolsReady: agentId ? service.bindings.hasAgent(agentId, workspaceId) : undefined }
+        : snapshot;
     } catch (error) { return { status: "error" as const, message: errorMessage(error) }; }
   });
 
   server.handle(runAction, async (input, context) => {
     const cwd = await workspaceDirectory(input.workspaceId, context);
     const agent = context.paseo.agents.ref(input.agentId);
-    const commands = await bridge;
+    const service = await mcp;
     return store.exclusive(input.workspaceId, async () => {
       const current = await agent.refresh();
       if (!current || current.agent.workspaceId !== input.workspaceId) throw new Error("The selected agent is not in this workspace.");
       if (current.agent.status === "running" || current.agent.status === "initializing") throw new Error("Wait for this agent to finish before sending a workflow action.");
+      if (!service.bindings.hasAgent(input.agentId, input.workspaceId)) throw new Error("Create a new agent in this workspace to load the workflow MCP tools. Existing agents cannot receive the injected configuration.");
       const snapshot = requireReady(await store.read(input.workspaceId, cwd));
       assertCurrent(snapshot, input);
       const action = snapshot.workflow.states[snapshot.state].actions.find(action => action.label === input.action);
       if (!action) throw new Error("This action is no longer available. Refresh the workflow.");
-      await agent.send(`${action.prompt}\n\n${commands.instructions(snapshot, cwd)}`);
+      await agent.send(action.prompt);
       return { sent: true as const };
     });
   });
 
-  return async () => { await (await bridge).close(); };
+  return async () => { await (await mcp).close(); };
 }

@@ -34,6 +34,7 @@ export const readySchema = z.object({
   revision: z.string(),
   definitionVersion: z.string(),
   updatedAt: z.string(),
+  toolsReady: z.boolean().optional(),
   workflow: workflowSchema,
 });
 export type ReadyWorkflow = z.infer<typeof readySchema>;
@@ -46,7 +47,7 @@ export type WorkflowSnapshot = z.infer<typeof snapshotSchema>;
 
 export const getWorkflow = defineRpc({
   name: "workflow.get",
-  input: z.object({ workspaceId: text }),
+  input: z.object({ workspaceId: text, agentId: text.optional() }),
   output: snapshotSchema,
 });
 
