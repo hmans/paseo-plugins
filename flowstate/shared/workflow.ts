@@ -1,10 +1,11 @@
+import { prConditions } from "./pr-conditions";
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
 const identifier = z.string().regex(/^[a-z][a-z0-9_-]*$/);
 const text = z.string().trim().min(1);
 const iconName = z.string().regex(/^[A-Z][A-Za-z0-9]*$/, "Use a PascalCase Lucide icon name, such as GitCommitHorizontal.");
-export const builtinConditions = ["git.dirty", "github.pr.merged"] as const;
+export const builtinConditions = ["git.dirty", ...prConditions] as const;
 export type ConditionExpression = string | { all: ConditionExpression[] } | { any: ConditionExpression[] } | { not: ConditionExpression };
 const expression: z.ZodType<ConditionExpression> = z.lazy(() => z.union([
   text, z.object({ all: z.array(expression).min(1) }).strict(),

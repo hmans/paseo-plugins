@@ -36,11 +36,11 @@ export default function contribute(server: PluginServerContext) {
     return workspace.workspaceDirectory;
   }
 
-  function readPullRequestMerged(workspaceId: string, { paseo }: PluginHandlerContext) {
+  function readPullRequest(workspaceId: string, { paseo }: PluginHandlerContext) {
     return async () => {
       const workspace = await paseo.workspaces.ref(workspaceId).refresh();
       if (!workspace) throw new Error("Workspace is unavailable.");
-      return workspace.githubRuntime?.pullRequest?.isMerged === true;
+      return workspace.githubRuntime;
     };
   }
 
@@ -51,7 +51,7 @@ export default function contribute(server: PluginServerContext) {
       const service = await mcp.catch(() => null);
       const snapshot = await store.inspect(workspaceId, cwd);
       return snapshot.status === "ready"
-        ? { ...snapshot, ...await conditions.results(snapshot, cwd, false, undefined, readPullRequestMerged(workspaceId, context)), toolsReady: agentId ? service?.bindings.hasAgent(agentId, workspaceId) ?? false : undefined }
+        ? { ...snapshot, ...await conditions.results(snapshot, cwd, false, undefined, readPullRequest(workspaceId, context)), toolsReady: agentId ? service?.bindings.hasAgent(agentId, workspaceId) ?? false : undefined }
         : snapshot;
     } catch (error) { return { status: "error" as const, message: errorMessage(error) }; }
   });
@@ -102,7 +102,7 @@ export default function contribute(server: PluginServerContext) {
       const action = workflowActions(snapshot.workflow, snapshot.state).find(action => action.label === input.action);
       if (!action) throw new Error("This action is no longer available. Refresh the workflow.");
       if ("prompt" in action && !(await mcp).bindings.hasAgent(input.agentId, input.workspaceId)) throw new Error("Create a new agent in this workspace to load the workflow MCP tools. Existing agents cannot receive the injected configuration.");
-      const result = (await conditions.results(snapshot, cwd, true, action.label, readPullRequestMerged(input.workspaceId, context))).actionConditions[action.label];
+      const result = (await conditions.results(snapshot, cwd, true, action.label, readPullRequest(input.workspaceId, context))).actionConditions[action.label];
       if (result.value !== "true") throw new Error(result.message ?? "This action's condition is no longer met.");
       // A command can take time or change the workflow file itself.
       assertCurrent(requireReady(await store.read(input.workspaceId, cwd)), input);

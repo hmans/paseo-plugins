@@ -9,6 +9,44 @@ actions:
       If the current branch has a configured upstream, push to it.
       Otherwise, leave the commit local.
 
+  - label: Fix CI
+    icon: Wrench
+    when: { all: [github.pr.open, github.pr.checks.failure] }
+    prompt: |
+      Inspect the attached PR's latest failing checks and logs. Fix failures in
+      the agreed scope, run relevant checks, and commit and push the fixes.
+      Preserve unrelated work. Recheck CI on the new head; report pending results.
+  - label: Resolve conflicts
+    icon: GitMerge
+    when: { all: [github.pr.open, github.pr.conflicting] }
+    prompt: |
+      Inspect the attached PR and fetch its current base branch. Resolve the
+      conflicts with that base while preserving local and unrelated changes.
+      Run relevant checks, commit and push the resolution without force-pushing.
+      Recheck the PR's mergeability and report the result.
+  - label: Address review feedback
+    icon: MessageSquare
+    when: { all: [github.pr.open, github.pr.review.changes_requested] }
+    prompt: |
+      Read the attached PR's current reviews and comments. Address requested
+      changes within the agreed scope, run relevant checks, and commit and push.
+      Summarize what was addressed and any feedback that needs user input.
+  - label: Check CI progress
+    icon: CircleHelp
+    when:
+      all:
+        - github.pr.open
+        - any: [github.pr.checks.pending, github.pr.checks.none]
+    prompt: |
+      Inspect the attached PR's latest checks. Report pending checks, failures,
+      or why checks have not started. Do not treat missing checks as passing.
+  - label: Check review status
+    icon: ScanEye
+    when: { all: [github.pr.open, github.pr.review.pending] }
+    prompt: |
+      Inspect the attached PR's reviews and unresolved discussions. Summarize
+      outstanding review requirements and any feedback we can address now.
+
 states:
   planning:
     label: Planning
@@ -109,6 +147,34 @@ states:
     label: Done
     icon: CircleCheck
     actions:
+      - label: Create pull request
+        icon: GitPullRequest
+        when: { not: github.pr.exists }
+        prompt: |
+          Review the completed work and verification results. Push the branch
+          and create a pull request following this repository's conventions.
+          Describe the final scope and checks; attach the PR to this workspace.
+      - label: Mark ready for review
+        icon: GitPullRequest
+        when: { all: [github.pr.open, github.pr.draft] }
+        prompt: |
+          Verify the attached draft PR matches the completed, tested scope.
+          Resolve any outstanding issues, then mark it ready for review.
+      - label: Merge PR
+        icon: GitMerge
+        when:
+          all:
+            - github.pr.open
+            - not: github.pr.draft
+            - github.pr.mergeable
+            - github.pr.checks.success
+            - github.pr.review.approved
+        prompt: |
+          Re-fetch the attached PR's current head and verify all required checks,
+          reviews, unresolved discussions, branch protections and merge requirements.
+          The button's conditions are only a preliminary check, not proof of readiness.
+          If GitHub permits a normal merge, merge using this repository's conventions.
+          Do not bypass protections or use an admin override. If blocked, report why.
       - label: Archive workspace
         operation: workspace.archive
         when: github.pr.merged

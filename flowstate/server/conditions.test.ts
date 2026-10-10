@@ -1,3 +1,5 @@
+import { evaluatePullRequest, type PullRequestRuntime } from "./pr-conditions";
+import { prConditions } from "../shared/pr-conditions";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
@@ -43,7 +45,7 @@ test("Git conditions observe untracked, staged, clean, and non-repository worksp
   const snapshot = requireReady(await store.inspect("one", cwd));
   const conditions = new Conditions(store.directory);
   const read = async (path = cwd) => (await conditions.results(snapshot, path, true)).actionConditions.Act.value;
-  assert.deepEqual(builtinConditions, ["git.dirty", "github.pr.merged"]);
+  assert.deepEqual(builtinConditions, ["git.dirty", ...prConditions]);
   assert.equal(await read(), "true");
   execFileSync("git", ["add", "."], { cwd });
   assert.equal(await read(), "true");
@@ -93,9 +95,9 @@ test("merged PR checks read each time and fail closed when workspace data is una
   const snapshot = requireReady(await store.inspect("one", root));
   const conditions = new Conditions(store.directory);
   t.after(() => conditions.close());
-  const read = async (reader?: () => Promise<boolean>) => (await conditions.results(snapshot, root, false, undefined, reader)).actionConditions.Act;
-  assert.equal((await read(async () => true)).value, "true");
-  assert.equal((await read(async () => false)).value, "false");
+  const read = async (reader?: () => Promise<PullRequestRuntime>) => (await conditions.results(snapshot, root, false, undefined, reader)).actionConditions.Act;
+  assert.equal((await read(async () => ({ pullRequest: { state: "MERGED", isMerged: true } }))).value, "true");
+  assert.equal((await read(async () => ({ pullRequest: null }))).value, "false");
   assert.equal((await read(async () => { throw new Error("Offline"); })).value, "unknown");
   assert.equal((await read()).value, "unknown");
 });
@@ -128,5 +130,74 @@ test("custom exit codes map to false and unknown without exposing output", async
     const checked = (await conditions.results(snapshot, root, true)).actionConditions.Act;
     assert.equal(checked.value, result);
     assert.ok(!checked.message?.includes("private output"));
+  }
+});
+
+test("PR conditions distinguish every SDK status and preserve unknown data", () => {
+  const base = { state: "OPEN", isMerged: false };
+  const check = (name: string, patch = {}) => evaluatePullRequest(`github.pr.${name}`, { pullRequest: { ...base, ...patch } }).value;
+  assert.equal(check("exists"), "true");
+  assert.equal(check("open"), "true");
+  assert.equal(check("closed"), "false");
+  assert.equal(check("closed", { state: "CLOSED" }), "true");
+  assert.equal(check("closed", { state: "CLOSED", isMerged: true }), "false");
+  assert.equal(check("merged", { state: "MERGED", isMerged: true }), "true");
+  for (const isDraft of [true, false]) assert.equal(check("draft", { isDraft }), String(isDraft));
+  assert.equal(check("draft"), "unknown");
+  for (const mergeable of ["MERGEABLE", "CONFLICTING", "UNKNOWN"] as const) {
+    assert.equal(check("mergeable", { mergeable }), mergeable === "UNKNOWN" ? "unknown" : String(mergeable === "MERGEABLE"));
+    assert.equal(check("conflicting", { mergeable }), mergeable === "UNKNOWN" ? "unknown" : String(mergeable === "CONFLICTING"));
+  }
+  for (const status of ["success", "pending", "failure", "none"]) {
+    for (const target of ["success", "pending", "failure", "none"]) {
+      assert.equal(check(`checks.${target}`, { checksStatus: status }), String(status === target));
+    }
+  }
+  for (const status of ["approved", "pending", "changes_requested"]) {
+    for (const target of ["approved", "pending", "changes_requested"]) {
+      assert.equal(check(`review.${target}`, { reviewDecision: status }), String(status === target));
+    }
+  }
+  assert.equal(check("checks.success"), "unknown");
+  assert.equal(check("review.approved", { reviewDecision: null }), "unknown");
+  for (const name of prConditions) {
+    assert.equal(evaluatePullRequest(name, { pullRequest: null }).value, "false");
+    for (const runtime of [undefined, null, {}, { featuresEnabled: false, pullRequest: base }, { error: { message: "offline" }, pullRequest: base }]) {
+      assert.equal(evaluatePullRequest(name, runtime).value, "unknown");
+    }
+  }
+});
+
+test("PR composites use one snapshot per evaluation and re-read on dispatch", async t => {
+  const root = await mkdtemp(join(tmpdir(), "workflow-pr-composite-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, ".paseo"));
+  const when = { all: ["github.pr.open", { not: "github.pr.draft" }, "github.pr.mergeable", "github.pr.checks.success", "github.pr.review.approved"] };
+  await writeFile(join(root, ".paseo/flowstate.yml"), definition(when));
+  const store = new WorkflowStore(join(root, "data"));
+  const snapshot = requireReady(await store.inspect("one", root));
+  const conditions = new Conditions(store.directory);
+  t.after(() => conditions.close());
+  let runtime: PullRequestRuntime = { pullRequest: { state: "OPEN", isMerged: false, isDraft: false, mergeable: "MERGEABLE", checksStatus: "success", reviewDecision: "approved" } };
+  let reads = 0;
+  const reader = async () => { reads++; return runtime; };
+  assert.equal((await conditions.results(snapshot, root, false, undefined, reader)).actionConditions.Act.value, "true");
+  assert.equal(reads, 1);
+  runtime.pullRequest!.checksStatus = "failure";
+  assert.equal((await conditions.results(snapshot, root, true, "Act", reader)).actionConditions.Act.value, "false");
+  assert.equal(reads, 2);
+  runtime = { pullRequest: null };
+  assert.equal((await conditions.results(snapshot, root, false, undefined, reader)).actionConditions.Act.value, "false");
+  assert.equal(reads, 3);
+});
+
+test("repository workflow validates and gates merging on conservative PR checks", async () => {
+  const workflow = parseWorkflow(await readFile(new URL("../../.paseo/flowstate.yml", import.meta.url), "utf8"));
+  const merge = workflow.states.done.actions.find(action => action.label === "Merge PR")!;
+  assert.ok(merge.when);
+  const ready: PullRequestRuntime = { pullRequest: { state: "OPEN", isMerged: false, isDraft: false, mergeable: "MERGEABLE", checksStatus: "success", reviewDecision: "approved" } };
+  assert.equal((await evaluate(merge.when!, async name => evaluatePullRequest(name, ready))).value, "true");
+  for (const patch of [{ isDraft: true }, { mergeable: "CONFLICTING" as const }, { checksStatus: "pending" as const }, { checksStatus: "none" as const }, { reviewDecision: "changes_requested" as const }]) {
+    assert.equal((await evaluate(merge.when!, async name => evaluatePullRequest(name, { pullRequest: { ...ready.pullRequest!, ...patch } }))).value, "false");
   }
 });

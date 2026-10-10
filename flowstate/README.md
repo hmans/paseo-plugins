@@ -144,7 +144,30 @@ conditions:
 
 `git.dirty` checks for staged, unstaged, and untracked changes in the workspace checkout, including submodule changes. Ignored files do not count. Git errors produce an unknown result. Results are cached for two seconds.
 
-`github.pr.merged` is true only when Paseo reports that the workspace's currently attached PR is merged. No attached PR, an open PR, or a PR closed without merging returns false and hides the action. The plugin reads the workspace through Paseo's SDK on each evaluation, including dispatch, without adding its own cache or making a separate GitHub request. Freshness follows Paseo's GitHub data. SDK read failures return unknown and disable the action.
+PR conditions use the workspace's currently attached pull request from Paseo:
+
+| Condition | True when |
+| --- | --- |
+| `github.pr.exists` | A PR is attached. |
+| `github.pr.open` | The PR is open and unmerged. |
+| `github.pr.closed` | The PR is closed without merging. |
+| `github.pr.merged` | The PR was merged. |
+| `github.pr.draft` | The PR is a draft. |
+| `github.pr.mergeable` | GitHub reports no merge conflicts. This is not full merge readiness. |
+| `github.pr.conflicting` | GitHub reports merge conflicts with the PR's base branch. |
+| `github.pr.checks.success` | The aggregate check status is success. |
+| `github.pr.checks.pending` | Checks are pending. |
+| `github.pr.checks.failure` | Checks failed. |
+| `github.pr.checks.none` | Paseo explicitly reports no checks. |
+| `github.pr.review.approved` | The review decision is approved. |
+| `github.pr.review.pending` | The review decision is pending. |
+| `github.pr.review.changes_requested` | The review decision requests changes. |
+
+An explicitly absent PR makes every PR condition false. Unloaded data, disabled GitHub features, refresh errors, missing optional fields, unknown mergeability, and null review decisions return unknown for the affected conditions. Unknown stays unknown under `not`; no checks is not success. Combine checks with `github.pr.open` to avoid offering work on closed or merged PRs.
+
+All PR conditions in one evaluation share a single SDK read. Each UI evaluation and action dispatch reads again, without a separate Flowstate PR cache or direct GitHub request. Freshness follows Paseo's GitHub data. These conditions do not enforce branch protections or guarantee merge readiness; merge prompts must recheck GitHub's current requirements.
+
+This repository's workflow includes actions for failed/pending CI, conflicts, review feedback, draft promotion, PR creation, and merging. Its merge action conservatively requires an open, non-draft, conflict-free PR with successful checks and approved review. Repositories without reviews or checks may need different gates; the prompt still verifies GitHub's requirements without bypassing protections.
 
 Use a condition name, `{ all: [...] }`, `{ any: [...] }`, or `{ not: ... }` in `when`. Lists must be nonempty; expressions can nest up to 20 levels. `not` preserves unknown. A false member decides `all`, and a true member decides `any`; otherwise an unknown member makes the result unknown.
 
