@@ -155,7 +155,7 @@ test("HTTP MCP lists tools, updates the bound workspace, reports conflicts, reje
   assert.equal((await fetch(service.url, { method: "POST", headers: { Authorization: `Bearer ${token}`, Origin: "https://example.com" } })).status, 403);
   const client = new Client({ name: "test", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(new URL(service.url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
-  assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ["flowtasks_get", "flowtasks_change"]);
+  assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ["flowtasks_get", "flowtasks_change", "flowtasks_batch"]);
   const read = await client.callTool({ name: "flowtasks_get", arguments: {} });
   assert.deepEqual(read.structuredContent, { revision: 0, items: [] });
   const change = await client.callTool({ name: "flowtasks_change", arguments: { expectedRevision: 0, action: create("From MCP") } });
@@ -179,6 +179,21 @@ test("HTTP MCP lists tools, updates the bound workspace, reports conflicts, reje
   assert.deepEqual(open.structuredContent, { revision: closed.revision, items: [] });
   const completed = await client.callTool({ name: "flowtasks_get", arguments: { status: "completed" } });
   assert.equal((completed.structuredContent as Outline).items.length, 2);
+  const batch = await client.callTool({ name: "flowtasks_batch", arguments: { expectedRevision: closed.revision, actions: [
+    { type: "create", parentId: null, text: "Batch parent", tempId: "p" },
+    { type: "create", parentId: { ref: "p" }, text: "Batch child", tempId: "c" },
+  ] } });
+  assert.equal(batch.isError, undefined);
+  const batched = batch.structuredContent as ReturnType<typeof taskView> & { createdIds: Record<string, string> };
+  assert.equal(batched.revision, closed.revision + 1);
+  assert.equal(batched.items.find(item => item.id === batched.createdIds.c)?.parentId, batched.createdIds.p);
+  const failedBatch = await client.callTool({ name: "flowtasks_batch", arguments: { expectedRevision: batched.revision, actions: [
+    { type: "update", id: batched.createdIds.p, text: "Do not save" },
+    { type: "delete", id: batched.createdIds.p, deleteChildren: false },
+  ] } });
+  assert.equal(failedBatch.isError, true);
+  assert.equal((await store.read("w")).revision, batched.revision);
+  assert.equal((await store.read("w")).items.find(item => item.id === batched.createdIds.p)?.text, "Batch parent");
   await client.close();
   const url = service.url;
   await service.close();

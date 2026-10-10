@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { actionSchema, descendants, outlineSchema, type Action, type Outline } from "../shared/tasks";
+import { actionSchema, batchSchema, descendants, outlineSchema, type Action, type BatchAction, type Outline } from "../shared/tasks";
 
 export const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === "ENOENT";
 export const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -78,6 +78,45 @@ export class TaskStore {
       const next = applyAction(current, action);
       await atomicWrite(this.path(workspaceId), JSON.stringify(next, null, 2) + "\n");
       return next;
+    });
+  }
+  async batch(workspaceId: string, expectedRevision: number, actions: BatchAction[]) {
+    const input = batchSchema.parse({ expectedRevision, actions });
+    return this.exclusive(`outline:${workspaceId}`, async () => {
+      const current = await this.read(workspaceId);
+      if (current.revision !== input.expectedRevision) throw new Error("The outline changed. Refresh and review it before trying again. Your batch was not saved.");
+      const created = new Map<string, string>();
+      const resolve = (reference: string | { ref: string }) => {
+        if (typeof reference === "string") return reference;
+        const id = created.get(reference.ref);
+        if (!id) throw new Error(`Unknown temporary reference: ${reference.ref}. Create the task before referencing it.`);
+        return id;
+      };
+      let next = current;
+      for (const [index, action] of input.actions.entries()) {
+        try {
+          let resolved: Action;
+          if (action.type === "create") {
+            if (action.tempId && created.has(action.tempId)) throw new Error(`Duplicate temporary ID: ${action.tempId}.`);
+            resolved = { type: "create", text: action.text, parentId: action.parentId === null ? null : resolve(action.parentId),
+              ...(action.afterId === undefined ? {} : { afterId: resolve(action.afterId) }) };
+          } else if (action.type === "move") {
+            resolved = { type: "move", id: resolve(action.id), parentId: action.parentId === null ? null : resolve(action.parentId),
+              afterId: action.afterId === null ? null : resolve(action.afterId) };
+          } else {
+            resolved = { ...action, id: resolve(action.id) };
+          }
+          const previous = next;
+          next = applyAction(next, resolved);
+          if (action.type === "create" && action.tempId) {
+            const previousIds = new Set(previous.items.map(item => item.id));
+            created.set(action.tempId, next.items.find(item => !previousIds.has(item.id))!.id);
+          }
+        } catch (error) { throw new Error(`Batch action ${index + 1}: ${message(error)} No changes were saved.`); }
+      }
+      next = { ...next, revision: current.revision + 1 };
+      await atomicWrite(this.path(workspaceId), JSON.stringify(next, null, 2) + "\n");
+      return { ...next, createdIds: Object.fromEntries(created) };
     });
   }
 }

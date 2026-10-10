@@ -4,17 +4,18 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { changeSchema, taskViewSchema, taskView, type Outline } from "../shared/tasks";
+import { batchSchema, batchResultSchema, changeSchema, taskViewSchema, taskView, type Outline } from "../shared/tasks";
 import { atomicWrite, isMissing, message, TaskStore } from "./store";
 import { WorkspaceBindings } from "./bindings";
 
 export function createTaskMcp(store: TaskStore, workspaceId: string) {
   const mcp = new McpServer({ name: "flowtasks", version: "0.1.0" }, {
-    instructions: "Flowtasks is a shared workspace task outline. Read it with flowtasks_get. Use flowtasks_change to create, edit, complete, move, or delete tasks when requested. Read before changes and pass the current revision. On a conflict, read again and reassess; do not blindly retry. completed is the task's own saved flag; effectiveCompleted also includes completion inherited from ancestors. Use status open to list only effectively open tasks. Completing or reopening a parent never changes its children's saved flags. Never edit the saved files directly.",
+    instructions: "Flowtasks is a shared workspace task outline. Read it with flowtasks_get. Use flowtasks_change for one edit or flowtasks_batch for atomic edits to a whole plan, including new parent/child references. Read before changes and pass the current revision. On a conflict, read again and reassess; do not blindly retry. completed is the task's own saved flag; effectiveCompleted also includes completion inherited from ancestors. Use status open to list only effectively open tasks. Completing or reopening a parent never changes its children's saved flags. Never edit the saved files directly.",
   });
-  const result = async (operation: () => Promise<Outline>, status: "all" | "open" | "completed" = "all") => {
+  const result = async (operation: () => Promise<Outline & { createdIds?: Record<string, string> }>, status: "all" | "open" | "completed" = "all") => {
     try {
-      const outline = taskView(await operation(), status);
+      const saved = await operation();
+      const outline = { ...taskView(saved, status), ...(saved.createdIds ? { createdIds: saved.createdIds } : {}) };
       return { content: [{ type: "text" as const, text: JSON.stringify(outline) }], structuredContent: outline };
     } catch (error) { return { isError: true, content: [{ type: "text" as const, text: message(error) }] }; }
   };
@@ -28,6 +29,11 @@ export function createTaskMcp(store: TaskStore, workspaceId: string) {
     inputSchema: changeSchema, outputSchema: taskViewSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, input => result(() => store.change(workspaceId, input.expectedRevision, input.action)));
+  mcp.registerTool("flowtasks_batch", {
+    description: "Apply 1–100 ordered actions atomically with one expectedRevision check and one revision increment. Actions use flowtasks_change semantics. Creates may set tempId; later actions can use {ref: tempId} in id, parentId, or afterId. String references are existing task IDs. Forward references and duplicate tempIds are rejected. Every intermediate action must be valid, including the 5000-task limit. If any action fails, nothing is saved. Returns the full outline and createdIds mapping temporary IDs to saved IDs (including tasks deleted later in the batch). Read and reassess after a revision conflict; do not blindly retry.",
+    inputSchema: batchSchema, outputSchema: batchResultSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  }, input => result(() => store.batch(workspaceId, input.expectedRevision, input.actions)));
   return mcp;
 }
 

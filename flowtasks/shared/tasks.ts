@@ -51,6 +51,18 @@ export const actionSchema = z.discriminatedUnion("type", [
 ]);
 export type Action = z.infer<typeof actionSchema>;
 export const changeSchema = z.object({ expectedRevision: z.number().int().nonnegative(), action: actionSchema }).strict();
+const taskReference = z.union([id, z.object({ ref: id }).strict()]);
+export const batchActionSchema = z.discriminatedUnion("type", [
+  actionSchema.options[0].extend({ tempId: id.optional(), parentId: taskReference.nullable(), afterId: taskReference.optional() }),
+  actionSchema.options[1].extend({ id: taskReference }),
+  actionSchema.options[2].extend({ id: taskReference, parentId: taskReference.nullable(), afterId: taskReference.nullable() }),
+  actionSchema.options[3].extend({ id: taskReference }),
+]);
+export type BatchAction = z.infer<typeof batchActionSchema>;
+export const batchSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(), actions: z.array(batchActionSchema).min(1).max(100),
+}).strict();
+export const batchResultSchema = taskViewSchema.extend({ createdIds: z.record(z.string(), id) });
 export const getOutline = defineRpc({ name: "outline.get", input: z.object({ workspaceId: id }), output: outlineSchema });
 export const changeOutline = defineRpc({ name: "outline.change", input: changeSchema.extend({ workspaceId: id }), output: outlineSchema });
 

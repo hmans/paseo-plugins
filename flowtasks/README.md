@@ -40,6 +40,21 @@ Paseo's public plugin API does not expose tab-focus history. Flowtasks selects t
 
 The plugin injects an HTTP MCP server into newly created agents. `flowtasks_get` reads the outline; `flowtasks_change` creates, updates, moves, or deletes a task. Each change must include the revision returned by the last read. A conflict requires a fresh read and review before another attempt.
 
+Use `flowtasks_batch` to apply 1–100 actions together. It checks `expectedRevision` once, validates the ordered actions in memory, then saves once and increments the revision once. If any action fails, no changes are saved. Actions follow the same rules as `flowtasks_change`, including explicit branch deletion and the 5,000-task limit at each step.
+
+Create actions can assign a `tempId`. Later actions can reference it with `{ "ref": "name" }` in `id`, `parentId`, or `afterId`. String values refer to saved task IDs. Temporary IDs must be unique within the batch; forward references are not supported. The result includes the full outline and a `createdIds` map, including IDs of tasks deleted later in the same batch.
+
+```json
+{
+  "expectedRevision": 12,
+  "actions": [
+    { "type": "create", "tempId": "plan", "parentId": null, "text": "Build the feature" },
+    { "type": "create", "tempId": "implementation", "parentId": { "ref": "plan" }, "text": "Implement it" },
+    { "type": "create", "parentId": { "ref": "plan" }, "afterId": { "ref": "implementation" }, "text": "Verify it" }
+  ]
+}
+```
+
 `flowtasks_get` accepts `status: "open"` to exclude both explicitly and implicitly completed tasks, or `status: "completed"` to return them. The default is `"all"`. MCP results include each task's saved `completed` flag and derived `effectiveCompleted` value. Completing or reopening a task never changes its descendants' saved flags.
 
 The MCP endpoint listens on daemon loopback. Each agent receives a token bound to its workspace; tool inputs cannot select another workspace. Agents created before installation do not receive the tools.
