@@ -340,6 +340,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
           style={{ minHeight: 22, fontSize: 12, lineHeight: 18, color: c.foregroundMuted, paddingVertical: 2, paddingHorizontal: 0,
             textAlignVertical: "top", backgroundColor: "transparent", borderWidth: 0,
             ...(Platform.OS === "web" ? { outlineWidth: 0, fieldSizing: "content", resize: "none" } : { height: rowHeights[`description:${item.id}`] ?? 22 }),
+            opacity: effectiveCompleted.has(item.id) ? 0.5 : 1,
             textDecorationLine: effectiveCompleted.has(item.id) ? "line-through" : "none" }} />}
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
