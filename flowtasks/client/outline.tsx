@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Platform, Pressable, Switch, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, Switch, Text, TextInput, View, type PressableProps } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRpc, useWorkspace, type PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { changeOutline, children, completedIds, getOutline, type Action, type Item, type Outline } from "../shared/tasks";
 import { dropAction, structure } from "../shared/drag";
 import { useOutlineDrag } from "./drag";
@@ -13,6 +13,16 @@ import { descriptionBoundary } from "./caret";
 
 type Draft = { base: string; text: string; description?: { base: string; text: string } };
 type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; currentTarget?: unknown; preventDefault(): void };
+
+function TaskActionButton({ theme, disabled, ...props }: Omit<PressableProps, "style"> & { theme: PluginWorkspacePanelProps["theme"] }) {
+  const [hovered, setHovered] = useState(false);
+  return <Pressable {...props} disabled={disabled}
+    onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
+    style={({ pressed }) => ({
+      padding: 8, borderRadius: 6, opacity: disabled ? 0.35 : 1,
+      backgroundColor: disabled ? "transparent" : pressed ? theme.colors.surface2 : hovered ? theme.colors.surface1 : "transparent",
+    })} />;
+}
 
 export function OutlinePanel(props: PluginWorkspacePanelProps) {
   return <View style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }}>
@@ -44,6 +54,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; text: string } | null>(null);
   const work = useWorkOnTask(workspaceId);
   const workPending = useRef(false);
   const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
@@ -343,7 +354,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
             opacity: effectiveCompleted.has(item.id) ? 0.5 : 1,
             textDecorationLine: effectiveCompleted.has(item.id) ? "line-through" : "none" }} />}
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
+        <TaskActionButton theme={theme} accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
           accessibilityHint="Send this task and its subtasks to the most recently used agent in this workspace."
           accessibilityState={{ disabled: hidden || saving || work.isPending || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim() }}
           disabled={hidden || saving || work.isPending || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim()}
@@ -355,10 +366,15 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
               if (agentId) navigation?.openAgent({ agentId });
             });
             void queue.current.finally(() => { workPending.current = false; });
-          }}
-          style={{ padding: 8, opacity: work.isPending || saving || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim() ? 0.35 : 1 }}>
+          }}>
           <Icon name="Play" size={14} color={c.accent} />
-        </Pressable>
+        </TaskActionButton>
+        <TaskActionButton theme={theme} accessibilityRole="button" accessibilityLabel={`Delete task: ${item.text || "task"}`}
+          accessibilityHint="Ask for confirmation before deleting this task and all its subtasks."
+          accessibilityState={{ disabled: hidden || saving }} disabled={hidden || saving}
+          onPress={() => setDeleteTarget({ id: item.id, text: drafts.current.get(item.id)?.text ?? item.text })}>
+          <Icon name="Trash2" size={14} color={c.foregroundMuted} />
+        </TaskActionButton>
       </View></FoldRow>)}
       {data && !items.length && <Pressable accessibilityRole="button" onPress={() => add()} style={{ padding: 12 }}>
         <Text style={{ color: c.foregroundMuted, fontSize: 15 }}>+ Start your first task</Text>
@@ -371,5 +387,25 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       left: (layout.compact ? 8 : 20) + Math.min(visible.find(entry => entry.item.id === drag.drag?.target?.id)?.depth ?? 0, layout.compact ? 5 : 12) * 20,
       right: layout.compact ? 8 : 20 }} />
     </View>
+    <Modal title="Delete task?" open={deleteTarget !== null} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+      <Modal.Content>
+        <Text style={{ color: c.foreground }}>
+          Delete “{deleteTarget?.text || "Untitled task"}” and all its subtasks? This cannot be undone.
+        </Text>
+        <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 12 }}>
+          <Pressable accessibilityRole="button" onPress={() => setDeleteTarget(null)} style={{ padding: 10 }}>
+            <Text style={{ color: c.foreground }}>Cancel</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => {
+            if (!deleteTarget) return;
+            const { id } = deleteTarget;
+            setDeleteTarget(null);
+            enqueue(async () => { await apply({ type: "delete", id, deleteChildren: true }); });
+          }} style={{ padding: 10, borderRadius: 6, backgroundColor: c.surface2 }}>
+            <Text style={{ color: c.foreground, fontWeight: "600" }}>Delete task</Text>
+          </Pressable>
+        </View>
+      </Modal.Content>
+    </Modal>
   </View>;
 }

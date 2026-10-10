@@ -74,6 +74,24 @@ test("completion preserves children and branch deletion is explicit", async t =>
   assert.deepEqual(state.items, []);
 });
 
+test("branch deletion removes all descendants and preserves surrounding tasks", async t => {
+  const store = await fixture(t);
+  const state = await store.batch("w", 0, [
+    { ...create("Root"), tempId: "root" },
+    { type: "create", text: "Branch", parentId: { ref: "root" }, tempId: "branch" },
+    { type: "create", text: "Child", parentId: { ref: "branch" }, tempId: "child" },
+    { type: "create", text: "Grandchild", parentId: { ref: "child" } },
+    { type: "create", text: "Sibling", parentId: { ref: "root" } },
+    create("Other root"),
+  ]);
+  const action = { type: "delete" as const, id: state.createdIds.branch, deleteChildren: true };
+  await assert.rejects(store.change("w", 0, action), /outline changed/);
+  assert.equal((await store.read("w")).items.length, 6);
+  const result = await store.change("w", state.revision, action);
+  assert.deepEqual(result.items.map(item => item.text), ["Root", "Sibling", "Other root"]);
+  assert.deepEqual(await new TaskStore(store.directory).read("w"), result);
+});
+
 test("inherited completion is reversible and follows moves without changing saved flags", async t => {
   const store = await fixture(t);
   let state = await store.change("w", 0, create("Root"));
