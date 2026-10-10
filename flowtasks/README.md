@@ -26,17 +26,21 @@ Click task text to edit it. Text saves after a short pause, on blur, and before 
 | Command+Enter / Ctrl+Enter | Toggle completion |
 | Backspace on an empty task | Delete it if it has no children |
 
-Use the circle beside a task to toggle completion and the chevron to collapse its children. The small toolbar provides add, indent, and outdent controls on touch devices. Completing a parent does not complete its children.
+Use the circle beside a task to toggle completion and the chevron to collapse its children. Children inherit completion from a completed ancestor: their text is struck through and they count toward progress, but only explicitly completed tasks show a green checkmark. Each task keeps its own completion flag, so reopening a parent restores unfinished descendants. Moving a task changes which ancestors it inherits completion from.
 
 Drag the checkbox circle beside a task to move it with its children. Clicking the circle without dragging toggles completion. Drop near the top or bottom of another row to place it before or after that task; drop in the middle to nest it inside. A line marks insertion points and a highlighted row marks nesting. The outline scrolls when you hold the drag near its top or bottom edge. Concurrent changes to the task order cancel the move so you can review the new order.
 
 ## Agent tools
 
-Use the play button beside a task to **Work on this now**. Flowtasks saves pending edits, sends the task with its ancestor context and subtasks to the most recently used agent in this workspace, and opens that agent. Completion stays unchanged until the work is verified.
+Use the play button beside a task to **Work on this now**. Flowtasks saves pending edits, sends the task text and ID to the most recently used agent in this workspace, and opens that agent. The prompt asks the agent to read Flowtasks for context and subtasks and mark verified work complete.
 
-Paseo's public plugin API does not expose tab-focus history. Flowtasks selects the agent with the latest user-message timestamp; if no agent has received a message, it uses the newest agent. If that agent is busy or unavailable, the action reports an error instead of selecting another agent. The receiving agent must have the Flowtasks tools; agents created before plugin installation need to be replaced.
+These prompts appear as compact task cards in the conversation. Select **Details** to see the original message, including the task ID and instructions. The agent still receives the full prompt.
+
+Paseo's public plugin API does not expose tab-focus history. Flowtasks selects the agent with the latest user-message timestamp; if no agent has received a message, it uses the newest agent. The play buttons fade and stay disabled while that agent is busy or unavailable, then become available when it is idle. The receiving agent must have the Flowtasks tools; agents created before plugin installation need to be replaced.
 
 The plugin injects an HTTP MCP server into newly created agents. `flowtasks_get` reads the outline; `flowtasks_change` creates, updates, moves, or deletes a task. Each change must include the revision returned by the last read. A conflict requires a fresh read and review before another attempt.
+
+`flowtasks_get` accepts `status: "open"` to exclude both explicitly and implicitly completed tasks, or `status: "completed"` to return them. The default is `"all"`. MCP results include each task's saved `completed` flag and derived `effectiveCompleted` value. Completing or reopening a task never changes its descendants' saved flags.
 
 The MCP endpoint listens on daemon loopback. Each agent receives a token bound to its workspace; tool inputs cannot select another workspace. Agents created before installation do not receive the tools.
 

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { children, type Outline } from "../shared/tasks";
+import { children, completedIds, taskView, type Outline } from "../shared/tasks";
 import { TaskStore } from "./store";
 import { startTaskMcp } from "./mcp";
 import { WorkspaceBindings } from "./bindings";
@@ -37,17 +37,54 @@ test("nested moves preserve children and sibling order; cycles and invalid posit
   assert.deepEqual(children(state.items, null).map(item => item.text), ["First", "Second"]);
 });
 
-test("completion is independent and branch deletion is explicit", async t => {
+test("completion preserves children and branch deletion is explicit", async t => {
   const store = await fixture(t);
   let state = await store.change("w", 0, create("Parent"));
   const id = state.items[0].id;
   state = await store.change("w", 1, create("Child", id));
   state = await store.change("w", 2, { type: "update", id, completed: true });
   assert.equal(state.items[1].completed, false);
+  assert.equal(completedIds(state.items).size, 2);
   assert.equal(state.items[0].completed, true);
   await assert.rejects(store.change("w", 3, { type: "delete", id, deleteChildren: false }), /children/);
   state = await store.change("w", 3, { type: "delete", id, deleteChildren: true });
   assert.deepEqual(state.items, []);
+});
+
+test("inherited completion is reversible and follows moves without changing saved flags", async t => {
+  const store = await fixture(t);
+  let state = await store.change("w", 0, create("Root"));
+  const root = state.items[0].id;
+  state = await store.change("w", state.revision, create("Parent", root));
+  const parent = state.items[1].id;
+  state = await store.change("w", state.revision, create("Child", parent));
+  const child = state.items[2].id;
+  state = await store.change("w", state.revision, create("Grandchild", child));
+  state = await store.change("w", state.revision, create("Sibling", root));
+  const grandchild = state.items[3].id;
+  state = await store.change("w", state.revision, { type: "update", id: grandchild, completed: true });
+  const revision = state.revision;
+  state = await store.change("w", revision, { type: "update", id: parent, completed: true });
+  assert.equal(state.revision, revision + 1);
+  assert.deepEqual(state.items.map(item => item.completed), [false, true, false, true, false]);
+  assert.deepEqual(taskView(state).items.map(item => item.effectiveCompleted), [false, true, true, true, false]);
+  assert.deepEqual(taskView(state, "open").items.map(item => item.text), ["Root", "Sibling"]);
+  assert.deepEqual(await new TaskStore(store.directory).read("w"), state);
+  state = await store.change("w", state.revision, { type: "update", id: parent, completed: false });
+  assert.deepEqual(state.items.map(item => item.completed), [false, false, false, true, false]);
+  assert.deepEqual(taskView(state, "open").items.map(item => item.text), ["Root", "Parent", "Child", "Sibling"]);
+  state = await store.change("w", state.revision, { type: "update", id: child, completed: false });
+  state = await store.change("w", state.revision, { type: "update", id: parent, text: "Renamed" });
+  assert.deepEqual(state.items.map(item => item.completed), [false, false, false, true, false]);
+  state = await store.change("w", state.revision, { type: "update", id: parent, completed: true });
+  state = await store.change("w", state.revision, create("New child", parent));
+  state = await store.change("w", state.revision, { type: "update", id: parent, completed: true });
+  assert.deepEqual(state.items.map(item => item.completed), [false, true, false, true, false, false]);
+  assert.equal(completedIds(state.items).size, 4);
+  state = await store.change("w", state.revision, { type: "move", id: child, parentId: root, afterId: null });
+  assert.equal(completedIds(state.items).has(child), false);
+  assert.equal(completedIds(state.items).has(grandchild), true);
+  assert.equal(taskView(state, "completed").items.length, 3);
 });
 
 test("concurrent writes reject stale revisions; workspaces and reloads retain independent state", async t => {
@@ -128,6 +165,20 @@ test("HTTP MCP lists tools, updates the bound workspace, reports conflicts, reje
   const escape = await client.callTool({ name: "flowtasks_get", arguments: { workspaceId: "other" } });
   assert.equal(escape.isError, true);
   assert.equal((await store.read("other")).items.length, 0);
+  let outline = await store.read("w");
+  const parent = outline.items[0].id;
+  outline = await store.change("w", outline.revision, create("Inherited child", parent));
+  const done = await client.callTool({ name: "flowtasks_change", arguments: {
+    expectedRevision: outline.revision, action: { type: "update", id: parent, completed: true },
+  } });
+  assert.equal(done.isError, undefined);
+  const closed = done.structuredContent as ReturnType<typeof taskView>;
+  assert.equal(closed.items[1].completed, false);
+  assert.equal(closed.items[1].effectiveCompleted, true);
+  const open = await client.callTool({ name: "flowtasks_get", arguments: { status: "open" } });
+  assert.deepEqual(open.structuredContent, { revision: closed.revision, items: [] });
+  const completed = await client.callTool({ name: "flowtasks_get", arguments: { status: "completed" } });
+  assert.equal((completed.structuredContent as Outline).items.length, 2);
   await client.close();
   const url = service.url;
   await service.close();

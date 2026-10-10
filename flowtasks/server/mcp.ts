@@ -4,28 +4,28 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { changeSchema, outlineSchema, type Outline } from "../shared/tasks";
+import { changeSchema, taskViewSchema, taskView, type Outline } from "../shared/tasks";
 import { atomicWrite, isMissing, message, TaskStore } from "./store";
 import { WorkspaceBindings } from "./bindings";
 
 export function createTaskMcp(store: TaskStore, workspaceId: string) {
   const mcp = new McpServer({ name: "flowtasks", version: "0.1.0" }, {
-    instructions: "Flowtasks is a shared workspace task outline. Read it with flowtasks_get. Use flowtasks_change to create, edit, complete, move, or delete tasks when requested. Read before changes and pass the current revision. On a conflict, read again and reassess; do not blindly retry. Tasks can have children. Completing a parent does not complete its children. Never edit the saved files directly.",
+    instructions: "Flowtasks is a shared workspace task outline. Read it with flowtasks_get. Use flowtasks_change to create, edit, complete, move, or delete tasks when requested. Read before changes and pass the current revision. On a conflict, read again and reassess; do not blindly retry. completed is the task's own saved flag; effectiveCompleted also includes completion inherited from ancestors. Use status open to list only effectively open tasks. Completing or reopening a parent never changes its children's saved flags. Never edit the saved files directly.",
   });
-  const result = async (operation: () => Promise<Outline>) => {
+  const result = async (operation: () => Promise<Outline>, status: "all" | "open" | "completed" = "all") => {
     try {
-      const outline = await operation();
+      const outline = taskView(await operation(), status);
       return { content: [{ type: "text" as const, text: JSON.stringify(outline) }], structuredContent: outline };
     } catch (error) { return { isError: true, content: [{ type: "text" as const, text: message(error) }] }; }
   };
   mcp.registerTool("flowtasks_get", {
-    description: "Read this workspace's outline and revision. Array order determines sibling order; parentId defines nesting. The workspace is fixed by your agent's token.",
-    inputSchema: z.object({}).strict(), outputSchema: outlineSchema,
+    description: "Read this workspace's outline and revision. Optional status: all (default), open, or completed. Open excludes tasks completed explicitly or through an ancestor. completed is the saved flag; effectiveCompleted includes ancestors. Array order determines sibling order; parentId defines nesting. The workspace is fixed by your agent's token.",
+    inputSchema: z.object({ status: z.enum(["all", "open", "completed"]).optional() }).strict(), outputSchema: taskViewSchema,
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, () => result(() => store.read(workspaceId)));
+  }, input => result(() => store.read(workspaceId), input.status));
   mcp.registerTool("flowtasks_change", {
-    description: "Change the shared outline using expectedRevision from flowtasks_get. Create appends under parentId (null for root), or follows afterId. Update changes text or completion. Move carries children: afterId null places it first. Delete requires deleteChildren true to remove a branch. Returns the new outline. Each successful change increments revision.",
-    inputSchema: changeSchema, outputSchema: outlineSchema,
+    description: "Change the shared outline using expectedRevision from flowtasks_get. Create appends under parentId (null for root), or follows afterId. Update changes text or the selected task's own completion flag; descendants inherit completion without changing their saved flags. Move carries children: afterId null places it first. Delete requires deleteChildren true to remove a branch. Returns the new outline with effectiveCompleted values. Each successful change increments revision.",
+    inputSchema: changeSchema, outputSchema: taskViewSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, input => result(() => store.change(workspaceId, input.expectedRevision, input.action)));
   return mcp;

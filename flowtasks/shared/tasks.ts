@@ -12,6 +12,36 @@ export const outlineSchema = z.object({
 }).strict();
 export type Outline = z.infer<typeof outlineSchema>;
 
+// Completion is inherited at read time; stored flags remain explicit choices.
+export function completedIds(items: Item[]): Set<string> {
+  const groups = new Map<string, Item[]>();
+  for (const item of items) {
+    if (item.parentId === null) continue;
+    const group = groups.get(item.parentId) ?? [];
+    group.push(item);
+    groups.set(item.parentId, group);
+  }
+  const result = new Set<string>();
+  const pending = items.filter(item => item.completed);
+  while (pending.length) {
+    const item = pending.pop()!;
+    if (result.has(item.id)) continue;
+    result.add(item.id);
+    pending.push(...(groups.get(item.id) ?? []));
+  }
+  return result;
+}
+
+export const taskViewSchema = outlineSchema.extend({
+  items: z.array(itemSchema.extend({ effectiveCompleted: z.boolean() })),
+});
+export function taskView(outline: Outline, status: "all" | "open" | "completed" = "all") {
+  const completed = completedIds(outline.items);
+  return { revision: outline.revision, items: outline.items
+    .map(item => ({ ...item, effectiveCompleted: completed.has(item.id) }))
+    .filter(item => status === "all" || item.effectiveCompleted === (status === "completed")) };
+}
+
 // Array order determines sibling order. Moving an item carries its whole subtree.
 export const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("create"), text, parentId: id.nullable(), afterId: id.optional() }).strict(),

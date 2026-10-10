@@ -3,7 +3,7 @@ import { Platform, Pressable, Text, TextInput, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRpc, useWorkspace, type PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { changeOutline, children, getOutline, type Action, type Item, type Outline } from "../shared/tasks";
+import { changeOutline, children, completedIds, getOutline, type Action, type Item, type Outline } from "../shared/tasks";
 import { dropAction, structure } from "../shared/drag";
 import { useOutlineDrag } from "./drag";
 import { FoldRow, useReducedMotion } from "./fold";
@@ -30,7 +30,6 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   const queue = useRef(Promise.resolve());
   const fields = useRef(new Map<string, TextInput>());
   const [editVersion, redraw] = useState(0);
-  const [active, setActive] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +116,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
     drafts.current.set(item.id, { base: existing?.base ?? item.text, text });
     redraw(value => value + 1);
   }
-  function focus(id?: string) { if (id) { setActive(id); setFocusId(id); } }
+  function focus(id?: string) { if (id) setFocusId(id); }
   function add(id?: string) {
     enqueue(async () => {
       const anchor = latest.current.items.find(item => item.id === id);
@@ -189,7 +188,8 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
     }
   }
   const muted = { color: c.foregroundMuted, fontSize: 12 };
-  const completed = items.filter(item => item.completed).length;
+  const effectiveCompleted = completedIds(items);
+  const completed = effectiveCompleted.size;
   const progress = items.length ? completed / items.length : 0;
   return <View style={{ flex: 1, backgroundColor: c.surface0 }}>
     <View style={{ paddingHorizontal: layout.compact ? 16 : 28, paddingTop: 16, paddingBottom: 12, gap: 4 }}>
@@ -254,41 +254,33 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
             const height = Math.max(26, Math.ceil(event.nativeEvent.contentSize.height));
             setRowHeights(previous => previous[item.id] === height ? previous : { ...previous, [item.id]: height });
           }}
-          onFocus={() => setActive(item.id)} onBlur={() => enqueue()}
+          onBlur={() => enqueue()}
           onKeyPress={event => { if (Platform.OS === "web") keyPress(event as KeyEvent, item); }}
           submitBehavior={Platform.OS === "web" ? "newline" : "submit"}
           onSubmitEditing={() => { if (Platform.OS !== "web") add(item.id); }}
           style={{ flex: 1, minWidth: 0, minHeight: 26, fontSize: 14, lineHeight: 20, paddingVertical: 3, paddingHorizontal: 0, borderWidth: 0, backgroundColor: "transparent", textAlignVertical: "top",
             ...(Platform.OS === "web" ? { outlineWidth: 0, fieldSizing: "content", resize: "none" } : { height: rowHeights[item.id] ?? 26 }),
-            color: item.completed ? c.foregroundMuted : c.foreground, textDecorationLine: item.completed ? "line-through" : "none" }} />
+            color: effectiveCompleted.has(item.id) ? c.foregroundMuted : c.foreground, textDecorationLine: effectiveCompleted.has(item.id) ? "line-through" : "none" }} />
         <Pressable accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
           accessibilityHint="Send this task and its subtasks to the most recently used agent in this workspace."
-          disabled={hidden || saving || work.isPending || !(drafts.current.get(item.id)?.text ?? item.text).trim()}
+          accessibilityState={{ disabled: hidden || saving || work.isPending || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim() }}
+          disabled={hidden || saving || work.isPending || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim()}
           onPress={() => {
-            if (workPending.current) return;
+            if (workPending.current || !work.canWork) return;
             workPending.current = true;
             enqueue(async () => {
               const agentId = await work.mutateAsync({ taskId: item.id, expectedRevision: latest.current.revision });
-              navigation?.openAgent({ agentId });
+              if (agentId) navigation?.openAgent({ agentId });
             });
             void queue.current.finally(() => { workPending.current = false; });
           }}
-          style={{ padding: 8, opacity: work.isPending || saving || !(drafts.current.get(item.id)?.text ?? item.text).trim() ? 0.35 : 1 }}>
+          style={{ padding: 8, opacity: work.isPending || saving || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim() ? 0.35 : 1 }}>
           <Icon name="Play" size={14} color={c.accent} />
         </Pressable>
       </View></FoldRow>)}
       {data && !items.length && <Pressable accessibilityRole="button" onPress={() => add()} style={{ padding: 12 }}>
         <Text style={{ color: c.foregroundMuted, fontSize: 15 }}>+ Start your first task</Text>
       </Pressable>}
-      {active && <View style={{ flexDirection: "row", gap: 20, paddingHorizontal: 22, paddingVertical: 12 }}>
-        {([
-          ["Add task", "Plus", () => add(active)],
-          ["Indent", "IndentIncrease", () => indent(active)],
-          ["Outdent", "IndentDecrease", () => indent(active, true)],
-        ] as const).map(([label, icon, onPress]) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={{ padding: 8 }}>
-          <Icon name={icon} size={16} color={c.foregroundMuted} />
-        </Pressable>)}
-      </View>}
     </ScrollView>
     {/* One overlay centered on the shared row boundary, outside folding clips. */}
     <View pointerEvents="none" style={{ position: "absolute", height: 2, backgroundColor: c.accent,

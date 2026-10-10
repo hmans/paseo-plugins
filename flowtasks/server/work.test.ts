@@ -28,14 +28,14 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
     input: { workspaceId: "workspace", agentId: "agent", taskId: outline.items[0].id, expectedRevision: outline.revision } };
 }
 
-test("prompt includes ancestor context and the selected subtree, excluding other tasks", () => {
+test("prompt identifies the selected task and leaves context retrieval to Flowtasks", () => {
   const item = (id: string, parentId: string | null, completed = false) => ({ id, parentId, completed, text: id });
   const prompt = taskPrompt({ revision: 3, items: [item("parent", null), item("selected", "parent", true), item("other", "parent"), item("child", "selected")] }, "selected");
-  const snapshot = JSON.parse(prompt.slice(prompt.indexOf('{\n')));
-  assert.deepEqual(snapshot.ancestors.map((item: { id: string }) => item.id), ["parent"]);
-  assert.deepEqual(snapshot.tasks.map((item: { id: string }) => item.id), ["selected", "child"]);
-  assert.equal(snapshot.tasks[0].completed, true);
-  assert.equal(snapshot.tasks[1].completed, false);
+  assert.match(prompt, /Work on this Flowtasks task: selected/);
+  assert.match(prompt, /Task ID: selected/);
+  assert.match(prompt, /flowtasks_get/);
+  assert.match(prompt, /flowtasks_change/);
+  assert.doesNotMatch(prompt, /parent|other|child|\{/);
   assert.throws(() => taskPrompt({ revision: 0, items: [] }, "missing"), /deleted/);
   assert.throws(() => taskPrompt({ revision: 0, items: [{ ...item("blank", null), text: "  " }] }, "blank"), /description/);
 });
@@ -86,12 +86,13 @@ test("simultaneous dispatches cannot send twice; a failed send releases the guar
   assert.equal(f.sent.length, 2);
 });
 
-test("large branches fail before sending", async t => {
+test("large branches do not inflate the prompt", async t => {
   const f = await fixture(t);
   for (let i = 0; i < 7; i++) {
     const outline = await f.store.change("workspace", f.input.expectedRevision, { type: "create", parentId: f.input.taskId, text: "x".repeat(10000) });
     f.input.expectedRevision = outline.revision;
   }
-  await assert.rejects(f.dispatch(f.input, f.context), /too large/);
-  assert.equal(f.sent.length, 0);
+  await f.dispatch(f.input, f.context);
+  assert.equal(f.sent.length, 1);
+  assert.ok(f.sent[0].length < 300);
 });
