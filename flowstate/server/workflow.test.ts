@@ -184,8 +184,13 @@ test("injection preserves configuration, binds actual workspace IDs, and support
   registerMcpInjection({ before: (name: string, handler: any) => { hooks.set(name, handler); return () => {}; } } as unknown as PluginServerContext, Promise.resolve(service));
   try {
     const existingMcp = { type: "http", url: "https://example.com/mcp" };
-    const request = { config: { provider: "codex", cwd, title: "Keep title", mcpServers: { existing: existingMcp }, providerOptions: { keep: true } }, env: { KEEP: "yes" } };
+    const request = { config: { provider: "codex", cwd, title: "Keep title", systemPrompt: "Keep existing instructions.", mcpServers: { existing: existingMcp }, providerOptions: { keep: true } }, env: { KEEP: "yes" } };
     const injected = await hooks.get("agent.create")!({ request });
+    assert.ok(injected.config.systemPrompt.startsWith(request.config.systemPrompt + "\n\n"));
+    assert.match(injected.config.systemPrompt, /workflow_get_state/);
+    assert.equal(request.config.systemPrompt, "Keep existing instructions.");
+    const withoutPrompt = await hooks.get("agent.create")!({ request: { config: { provider: "codex", cwd } } });
+    assert.ok(withoutPrompt.config.systemPrompt.startsWith("Flowstate"));
     assert.deepEqual(injected.config.mcpServers.existing, existingMcp);
     assert.deepEqual(injected.config.providerOptions, request.config.providerOptions);
     assert.equal(injected.config.cwd, cwd);
@@ -210,6 +215,7 @@ test("injection preserves configuration, binds actual workspace IDs, and support
     await assert.rejects(hooks.get("agent.create")!({ request: { config: { ...request.config, mcpServers: { [MCP_NAME]: existingMcp } } } }), /unrelated MCP server/);
     const cloned = await hooks.get("agent.create")!({ request: injected });
     assert.notEqual(cloned.env[TOKEN_ENV], injected.env[TOKEN_ENV]);
+    assert.equal(cloned.config.systemPrompt, injected.config.systemPrompt);
   } finally { await service.close(); }
 });
 

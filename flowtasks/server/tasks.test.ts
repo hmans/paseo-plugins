@@ -233,8 +233,15 @@ test("creation hooks preserve other MCPs and bind the new token before interacti
   t.after(() => service.close());
   const hooks = new Map<string, (input: any) => Promise<any>>();
   registerMcpInjection({ before: (name: string, handler: any) => hooks.set(name, handler) } as unknown as PluginServerContext, Promise.resolve(service));
-  const request = { config: { cwd: store.directory, mcpServers: { other: { type: "http", url: "http://example.test" } } }, env: { EXISTING: "yes" } };
+  const request = { config: { cwd: store.directory, systemPrompt: "Keep existing instructions.", mcpServers: { other: { type: "http", url: "http://example.test" } } }, env: { EXISTING: "yes" } };
   const created = await hooks.get("agent.create")!({ request });
+  assert.ok(created.config.systemPrompt.startsWith(request.config.systemPrompt + "\n\n"));
+  assert.match(created.config.systemPrompt, /flowtasks_get/);
+  assert.equal(request.config.systemPrompt, "Keep existing instructions.");
+  const withoutPrompt = await hooks.get("agent.create")!({ request: { config: { cwd: store.directory } } });
+  assert.ok(withoutPrompt.config.systemPrompt.startsWith("Flowtasks"));
+  const cloned = await hooks.get("agent.create")!({ request: created });
+  assert.equal(cloned.config.systemPrompt, created.config.systemPrompt);
   assert.deepEqual(created.config.mcpServers.other, request.config.mcpServers.other);
   const token = created.env.PASEO_FLOWTASKS_BOOTSTRAP_TOKEN;
   assert.equal(service.bindings.resolve(token), null);

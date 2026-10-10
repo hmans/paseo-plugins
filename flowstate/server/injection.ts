@@ -7,6 +7,8 @@ import type { startWorkflowMcp } from "./mcp";
 export const MCP_NAME = "flowstate";
 export const TOKEN_ENV = "PASEO_FLOWSTATE_BOOTSTRAP_TOKEN";
 
+const AGENT_GUIDANCE = "Flowstate tracks this workspace's workflow. At the start of substantive work, read workflow_get_state and keep the state aligned with the actual stage as work progresses. Follow the configured transitions and criteria; move to the completion state only after verifying the agreed work. Routine questions, checks, and commits do not need a new workflow cycle. A clear user request is enough to proceed with routine work; do not add approval steps just for tracking. State is shared: read before transitions, use the returned revision and definitionVersion, and reassess conflicts. Use the tools, not saved state files.";
+
 export function registerMcpInjection(server: PluginServerContext, ready: ReturnType<typeof startWorkflowMcp>, observeContext?: (context: PluginHookContext) => void) {
   server.before("agent.create", async ({ request }, context) => {
     observeContext?.(context);
@@ -18,11 +20,13 @@ export function registerMcpInjection(server: PluginServerContext, ready: ReturnT
       throw new Error(`An unrelated MCP server already uses the name "${MCP_NAME}".`);
     }
     const token = await mcp.bindings.issue(request.config.cwd);
+    const systemPrompt = request.config.systemPrompt ?? "";
     return {
       ...request,
       env: { ...request.env, [TOKEN_ENV]: token },
       config: {
         ...request.config,
+        systemPrompt: systemPrompt.includes(AGENT_GUIDANCE) ? systemPrompt : [systemPrompt, AGENT_GUIDANCE].filter(Boolean).join("\n\n"),
         mcpServers: {
           ...request.config.mcpServers,
           [MCP_NAME]: { type: "http" as const, url: mcp.url, headers: { Authorization: `Bearer ${token}` } },
