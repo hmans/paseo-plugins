@@ -2,6 +2,7 @@ import type { PluginServerContext, PluginHandlerContext } from "@getpaseo/plugin
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getWorkflow, runAction, setCommandTrust, transitionWorkflow, workflowActions, type Transition, type ReadyWorkflow } from "./shared/workflow";
+import { setupPrompt, setupWorkflow } from "./shared/setup";
 import { publishTransition } from "./server/timeline";
 import { Conditions } from "./server/conditions";
 import { assertCurrent, errorMessage, requireReady, WorkflowStore } from "./server/store";
@@ -71,6 +72,20 @@ export default function contribute(server: PluginServerContext) {
       if (snapshot.definitionVersion !== input.definitionVersion) throw new Error("Workflow changed. Review the commands again before trusting them.");
       await conditions.trust(snapshot, cwd, input.trusted);
       return { saved: true as const };
+    });
+  });
+
+  server.handle(setupWorkflow, async ({ workspaceId, agentId }, context) => {
+    const cwd = await workspaceDirectory(workspaceId, context);
+    const agent = context.paseo.agents.ref(agentId);
+    return store.exclusive(workspaceId, async () => {
+      const snapshot = await store.read(workspaceId, cwd);
+      if (snapshot.status !== "missing") throw new Error("Workflow already exists or needs repair. Refresh the workflow before continuing.");
+      const current = await agent.refresh();
+      if (!current || current.agent.workspaceId !== workspaceId) throw new Error("The selected agent is not in this workspace.");
+      if (current.agent.status === "running" || current.agent.status === "initializing") throw new Error("Wait for this agent to finish before setting up a workflow.");
+      await agent.send(setupPrompt);
+      return { sent: true as const };
     });
   });
 

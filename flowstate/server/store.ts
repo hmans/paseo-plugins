@@ -26,6 +26,20 @@ export function parseWorkflow(source: string) {
   return workflowSchema.parse(document.toJS({ maxAliasCount: 0 }));
 }
 
+// Definition validation deliberately bypasses state initialization and condition execution.
+export async function validateWorkflow(cwd: string) {
+  let source: string;
+  try { source = await readFile(join(cwd, ".paseo", "flowstate.yml"), "utf8"); }
+  catch (error) {
+    return { status: isMissing(error) ? "missing" as const : "error" as const,
+      message: isMissing(error) ? "No .paseo/flowstate.yml exists in this workspace." : errorMessage(error) };
+  }
+  try {
+    parseWorkflow(source);
+    return { status: "valid" as const, definitionVersion: createHash("sha256").update(source).digest("hex") };
+  } catch (error) { return { status: "invalid" as const, message: errorMessage(error) }; }
+}
+
 export class WorkflowStore {
   private queues = new Map<string, Promise<unknown>>();
   constructor(readonly directory: string) {}

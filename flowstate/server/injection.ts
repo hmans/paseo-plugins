@@ -1,19 +1,14 @@
 import type { PluginServerContext, PluginHookContext } from "@getpaseo/plugin/server";
-import { access } from "node:fs/promises";
-import { join } from "node:path";
-import { isMissing } from "./store";
 import type { startWorkflowMcp } from "./mcp";
 
 export const MCP_NAME = "flowstate";
 export const TOKEN_ENV = "PASEO_FLOWSTATE_BOOTSTRAP_TOKEN";
 
-const AGENT_GUIDANCE = "Flowstate tracks this workspace's workflow. At the start of substantive work, read workflow_get_state and keep the state aligned with the actual stage as work progresses. Follow the configured transitions and criteria; move to the completion state only after verifying the agreed work. Routine questions, checks, and commits do not need a new workflow cycle. A clear user request is enough to proceed with routine work; do not add approval steps just for tracking. State is shared: read before transitions, use the returned revision and definitionVersion, and reassess conflicts. Use the tools, not saved state files.";
+const AGENT_GUIDANCE = "Flowstate provides optional workspace workflows. Use workflow_validate after creating or editing .paseo/flowstate.yml and fix validation errors before declaring setup complete. At the start of substantive work, read workflow_get_state. If it reports missing, continue normal work without creating a workflow unless asked. If ready, keep the state aligned with the actual stage as work progresses. Follow the configured transitions and criteria; move to the completion state only after verifying the agreed work. Routine questions, checks, and commits do not need a new workflow cycle. A clear user request is enough to proceed with routine work; do not add approval steps just for tracking. State is shared: read before transitions, use the returned revision and definitionVersion, and reassess conflicts. Use the tools, not saved state files.";
 
 export function registerMcpInjection(server: PluginServerContext, ready: ReturnType<typeof startWorkflowMcp>, observeContext?: (context: PluginHookContext) => void) {
   server.before("agent.create", async ({ request }, context) => {
     observeContext?.(context);
-    try { await access(join(request.config.cwd, ".paseo", "flowstate.yml")); }
-    catch (error) { if (isMissing(error)) return; throw error; }
     const mcp = await ready;
     const previous = request.config.mcpServers?.[MCP_NAME];
     if (previous && !(previous.type === "http" && previous.url === mcp.url && mcp.bindings.owns(previous.headers?.Authorization?.replace(/^Bearer /, "") ?? ""))) {

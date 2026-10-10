@@ -138,3 +138,10 @@ export const transitionWorkflow = defineRpc({
 export const transitionRowSchema = z.object({
   from: text, to: text, actor: z.enum(["user", "agent"]),
 });
+
+
+export const validationSchema = z.object({
+  status: z.enum(["valid", "invalid", "missing", "error"]),
+  definitionVersion: z.string().optional(),
+  message: z.string().optional(),
+});

@@ -10,7 +10,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { startWorkflowMcp } from "./mcp";
 import { MCP_NAME, TOKEN_ENV, registerMcpInjection } from "./injection";
 import { assertCurrent, parseWorkflow, requireReady, WorkflowStore } from "./store";
-import { readySchema, type ReadyWorkflow } from "../shared/workflow";
+import { exampleWorkflow, setupPrompt } from "../shared/setup";
+import { readySchema, snapshotSchema, validationSchema, type ReadyWorkflow } from "../shared/workflow";
 
 const fixture = `initial: planning
 states:
@@ -153,7 +154,7 @@ test("MCP discovers tools, scopes calls, rejects stale transitions, and reconnec
     await assert.rejects(service.bindings.bind(token, "agent-two", "two", cwd), /another agent or workspace/);
     await client.connect(new StreamableHTTPClientTransport(new URL(service.url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
     const tools = await client.listTools();
-    assert.deepEqual(tools.tools.map(tool => tool.name).sort(), ["workflow_get_state", "workflow_transition"]);
+    assert.deepEqual(tools.tools.map(tool => tool.name).sort(), ["workflow_get_state", "workflow_transition", "workflow_validate"]);
     const read = async () => readySchema.parse((await client.callTool({ name: "workflow_get_state", arguments: {} })).structuredContent);
     const initial = await read();
     assert.equal(initial.workspaceId, "one");
@@ -211,7 +212,7 @@ test("injection preserves configuration, binds actual workspace IDs, and support
     await hooks.get("agent.session_open")!({ request: { agentId: "second-agent", workspaceId: "two", cwd, purpose: "interactive", env: second.env } });
     assert.equal(service.bindings.resolve(second.env[TOKEN_ENV])?.workspaceId, "two");
     assert.equal(service.bindings.resolve(injected.env[TOKEN_ENV])?.workspaceId, "one");
-    assert.equal(await hooks.get("agent.create")!({ request: { config: { cwd: root }, env: {} } }), undefined);
+    assert.ok((await hooks.get("agent.create")!({ request: { config: { cwd: root }, env: {} } })).config.mcpServers[MCP_NAME]);
     await assert.rejects(hooks.get("agent.create")!({ request: { config: { ...request.config, mcpServers: { [MCP_NAME]: existingMcp } } } }), /unrelated MCP server/);
     const cloned = await hooks.get("agent.create")!({ request: injected });
     assert.notEqual(cloned.env[TOKEN_ENV], injected.env[TOKEN_ENV]);
@@ -433,4 +434,120 @@ test("archive actions use the selected workspace without MCP and retain dispatch
     if (previous === undefined) delete process.env.PASEO_FLOWSTATE_DATA_DIR;
     else process.env.PASEO_FLOWSTATE_DATA_DIR = previous;
   }
+});
+
+
+test("setup prompt embeds a complete valid workflow with reachable stages and revision paths", () => {
+  const embedded = setupPrompt.match(/```yaml\n([\s\S]*?)```/)?.[1];
+  assert.equal(embedded, exampleWorkflow);
+  const workflow = parseWorkflow(embedded!);
+  const reached = new Set<string>();
+  const visit = (id: string) => {
+    if (reached.has(id)) return;
+    reached.add(id);
+    workflow.states[id].transitions.forEach(visit);
+  };
+  visit(workflow.initial);
+  assert.deepEqual([...reached].sort(), Object.keys(workflow.states).sort());
+  assert.ok(workflow.states.implementing.transitions.includes("planning"));
+  assert.ok(workflow.states.reviewing.transitions.includes("implementing"));
+  assert.ok(workflow.states.done.transitions.includes("planning"));
+});
+
+test("setup sends the bundled guide without MCP and rejects unavailable, busy and configured targets", async t => {
+  const { cwd, store, file } = await setup(t);
+  await rm(file);
+  const previous = process.env.PASEO_FLOWSTATE_DATA_DIR;
+  process.env.PASEO_FLOWSTATE_DATA_DIR = store.directory;
+  const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
+  const cleanup = contribute({
+    handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler),
+    before: () => () => {}, on: () => () => {},
+  } as unknown as PluginServerContext);
+  let status = "idle";
+  let workspaceId = "one";
+  let available = true;
+  const sent: { agentId: string; text: string }[] = [];
+  const context = { paseo: {
+    workspaces: { ref: () => ({ refresh: async () => ({ workspaceDirectory: cwd }) }) },
+    agents: { ref: (agentId: string) => ({
+      refresh: async () => available ? { agent: { workspaceId, status } } : null,
+      send: async (text: string) => { sent.push({ agentId, text }); },
+    }) },
+  } };
+  try {
+    const run = handlers.get("workflow.setup")!;
+    const input = { workspaceId: "one", agentId: "selected" };
+    assert.deepEqual(await run(input, context), { sent: true });
+    assert.deepEqual(sent, [{ agentId: "selected", text: setupPrompt }]);
+    assert.equal((await store.inspect("one", cwd)).status, "missing");
+    for (const busy of ["running", "initializing"]) {
+      status = busy;
+      await assert.rejects(run(input, context), /Wait for this agent/);
+    }
+    status = "idle";
+    workspaceId = "other";
+    await assert.rejects(run(input, context), /not in this workspace/);
+    workspaceId = "one";
+    available = false;
+    await assert.rejects(run(input, context), /not in this workspace/);
+    available = true;
+    await writeFile(file, fixture);
+    await assert.rejects(run(input, context), /Workflow already exists/);
+    await writeFile(file, "invalid: yaml");
+    await assert.rejects(run(input, context), /Invalid .paseo/);
+    assert.equal(sent.length, 1);
+  } finally {
+    await cleanup();
+    if (previous === undefined) delete process.env.PASEO_FLOWSTATE_DATA_DIR;
+    else process.env.PASEO_FLOWSTATE_DATA_DIR = previous;
+  }
+});
+
+
+test("agents created before YAML can validate, repair and use workflows without validation state writes", async t => {
+  const { cwd, store, file } = await setup(t);
+  await rm(file);
+  const service = await startWorkflowMcp(store);
+  const hooks = new Map<string, (input: any) => Promise<any>>();
+  registerMcpInjection({ before: (name: string, handler: any) => { hooks.set(name, handler); return () => {}; } } as unknown as PluginServerContext, Promise.resolve(service));
+  const client = new Client({ name: "setup-test", version: "1.0.0" });
+  try {
+    const injected = await hooks.get("agent.create")!({ request: { config: { cwd } } });
+    await hooks.get("agent.session_open")!({ request: { agentId: "setup-agent", workspaceId: "one", cwd, purpose: "interactive", env: injected.env } });
+    const config = injected.config.mcpServers[MCP_NAME];
+    await client.connect(new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.headers } }));
+    const before = (await readdir(store.directory)).sort();
+    const validate = async () => {
+      const result = await client.callTool({ name: "workflow_validate", arguments: {} });
+      assert.notEqual(result.isError, true);
+      return validationSchema.parse(result.structuredContent);
+    };
+    assert.equal((await validate()).status, "missing");
+    assert.equal(snapshotSchema.parse((await client.callTool({ name: "workflow_get_state", arguments: {} })).structuredContent).status, "missing");
+    for (const invalid of ["initial: [", fixture.replace("[implementing]", "[unknown]"), fixture + "extra: true\n", fixture + "initial: planning\n", "initial: &x planning\nstates: *x", "x".repeat(256 * 1024 + 1)]) {
+      await writeFile(file, invalid);
+      const result = await validate();
+      assert.equal(result.status, "invalid");
+      assert.ok(result.message);
+    }
+    for (const args of [{ workspaceId: "other" }, { path: "/tmp/other.yml" }]) {
+      assert.equal((await client.callTool({ name: "workflow_validate", arguments: args })).isError, true);
+    }
+    await writeFile(file, exampleWorkflow);
+    const valid = await validate();
+    assert.equal(valid.status, "valid");
+    assert.deepEqual((await readdir(store.directory)).sort(), before);
+    const initial = readySchema.parse((await client.callTool({ name: "workflow_get_state", arguments: {} })).structuredContent);
+    assert.equal(initial.definitionVersion, valid.definitionVersion);
+    const next = readySchema.parse((await client.callTool({ name: "workflow_transition", arguments: expected(initial, "implementing") })).structuredContent);
+    assert.equal(next.state, "implementing");
+    const files = await readdir(store.directory);
+    const contents = await Promise.all(files.map(name => readFile(join(store.directory, name), "utf8")));
+    await validate();
+    assert.deepEqual(await Promise.all(files.map(name => readFile(join(store.directory, name), "utf8"))), contents);
+    await rm(file);
+    await mkdir(file);
+    assert.equal((await validate()).status, "error");
+  } finally { await client.close(); await service.close(); }
 });

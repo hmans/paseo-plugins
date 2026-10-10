@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent, useRpc, type PluginButtonContentProps, type PluginButtonIconProps, type PluginButton } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { actionDescription, defaultActionIcon, getWorkflow, runAction, setCommandTrust, transitionWorkflow, workflowActions } from "../shared/workflow";
+import { setupWorkflow } from "../shared/setup";
 import { hoverTitle } from "./web";
 import { actionButtons } from "./action-pills";
 
@@ -56,13 +57,19 @@ export function WorkflowIcon(props: PluginButtonIconProps & { agentId: string; o
   return <Icon name={icon} size={props.size} color={props.theme.colors.accent} />;
 }
 
-type ActionsProps = Pick<Extract<PluginButtonContentProps, { context: "agent" }>, "workspaceId" | "agentId" | "theme" | "layout"> & { onSent?(): void };
+type ActionsProps = Pick<Extract<PluginButtonContentProps, { context: "agent" }>, "workspaceId" | "agentId" | "theme" | "layout"> & { onComplete?(): void };
 
-function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: ActionsProps) {
+function WorkflowActions({ workspaceId, agentId, theme, layout, onComplete }: ActionsProps) {
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const query = useWorkflow(workspaceId, agentId);
   const queryClient = useQueryClient();
   const run = useRpc(runAction);
+  const setup = useRpc(setupWorkflow);
+  const setupSend = useMutation({
+    mutationFn: () => setup({ workspaceId, agentId }),
+    onSuccess: () => onComplete?.(),
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workflow", workspaceId] }); },
+  });
   const saveTrust = useRpc(setCommandTrust);
   const changeState = useRpc(transitionWorkflow);
   const agent = useAgent(agentId, agent => ({ status: agent.status }));
@@ -72,6 +79,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
       if (snapshot?.status !== "ready") throw new Error("Workflow is not ready.");
       return changeState({ workspaceId, agentId, target, expectedState: snapshot.state, expectedRevision: snapshot.revision, definitionVersion: snapshot.definitionVersion });
     },
+    onSuccess: () => onComplete?.(),
     onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workflow", workspaceId] }); },
   });
   const trust = useMutation({
@@ -86,7 +94,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
       if (snapshot?.status !== "ready") throw new Error("Workflow is not ready.");
       return run({ workspaceId, agentId, action, expectedState: snapshot.state, expectedRevision: snapshot.revision, definitionVersion: snapshot.definitionVersion });
     },
-    onSuccess: () => onSent?.(),
+    onSuccess: () => onComplete?.(),
     onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workflow", workspaceId] }); },
   });
   const colors = theme.colors;
@@ -95,6 +103,41 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
   const busy = !agent || agent.status === "running" || agent.status === "initializing";
 
   if (query.isPending) return <Text style={muted}>Loading workflow…</Text>;
+  if (!query.isError && snapshot?.status === "missing") {
+    const disabled = busy || setupSend.isPending;
+    return <View style={{ gap: 18, maxWidth: 360 }}>
+      <View style={{ gap: 6 }}>
+        <Text style={{ ...text, fontSize: 20, fontWeight: "600" }}>Give your work a flow</Text>
+        <Text style={muted}>Turn your project’s process into actions your agent can follow.</Text>
+      </View>
+      <View style={{ gap: 8 }}>
+        <Text style={{ ...muted, fontSize: 11, fontWeight: "600", letterSpacing: 0.8 }}>A STARTING POINT</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+          {["Plan", "Build", "Review", "Done"].map((label, index) => <View key={label} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            {index > 0 && <Icon name="ChevronRight" size={12} color={colors.foregroundMuted} />}
+            <View style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 6, backgroundColor: colors.surface2 }}>
+              <Text style={{ ...text, fontSize: 12, fontWeight: "500" }}>{label}</Text>
+            </View>
+          </View>)}
+        </View>
+      </View>
+      <View style={{ gap: 10 }}>
+        <Text style={muted}>Your agent will tailor the steps to this project and check that everything is ready to use.</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Set up workflow"
+          accessibilityHint="Ask this agent to create and validate a workflow for this project."
+          accessibilityState={{ disabled, busy: setupSend.isPending }}
+          disabled={disabled} onPress={() => setupSend.mutate()}
+          style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+            minHeight: 44, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8,
+            backgroundColor: colors.accent, opacity: disabled ? 0.5 : pressed ? 0.8 : 1 })}>
+          <Icon name="Sparkles" size={16} color={colors.accentForeground} />
+          <Text style={{ color: colors.accentForeground, fontSize: 14, fontWeight: "600", flexShrink: 1 }}>{setupSend.isPending ? "Sending…" : "Set up workflow"}</Text>
+        </Pressable>
+        {busy && <Text style={muted}>Available when this agent finishes.</Text>}
+        {setupSend.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{setupSend.error.message}</Text>}
+      </View>
+    </View>;
+  }
   if (query.isError || !snapshot || snapshot.status !== "ready") {
     const message = query.isError ? query.error.message : snapshot && snapshot.status !== "ready" ? snapshot.message : "Workflow is unavailable.";
     return <View style={{ gap: 12 }}>
@@ -186,5 +229,5 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
 
 export function WorkflowPopover(props: PluginButtonContentProps) {
   if (props.context !== "agent") return null;
-  return <WorkflowActions {...props} onSent={props.close} />;
+  return <WorkflowActions {...props} onComplete={props.close} />;
 }

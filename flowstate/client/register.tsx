@@ -1,10 +1,12 @@
 import type { PluginButtonIconProps, PluginButtonRegistration, PluginClientContext } from "@getpaseo/plugin/client";
 import { WorkflowIcon, WorkflowPopover } from "./workflow";
+import { registerSetupCards } from "./setup-card";
 import { TransitionRow } from "./timeline";
 import { transitionRowSchema } from "../shared/workflow";
 import { createActionPills } from "./action-pills";
 
 export function registerWorkflow(client: PluginClientContext) {
+  registerSetupCards(client);
   const lifetime = new AbortController();
   const pills = new Map<string, { workspaceId: string; remove(): void }>();
 

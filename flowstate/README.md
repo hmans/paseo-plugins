@@ -22,14 +22,16 @@ paseo plugin add git:hmans/paseo-plugins:flowstate
 
 Plugins must be enabled on the target daemon. This plugin's installation ID is `flowstate`.
 
-1. Add `.paseo/flowstate.yml` to the workspace checkout. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/flowstate.yml`](../.paseo/flowstate.yml).
+1. In a workspace without a workflow, open **Set up workflow** and choose **Set up workflow** in the setup card. The agent receives a bundled authoring guide and a complete Planning → Implementing → Reviewing → Done example to adapt to your project. New agents receive workflow tools before the file exists. The setup prompt requires `workflow_validate` and correction of any errors before reporting success. Older agents without the tool need to be replaced to finish validation. You can also add `.paseo/flowstate.yml` manually. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/flowstate.yml`](../.paseo/flowstate.yml).
 2. Create a new agent in that workspace after the plugin is running. Its composer shows a branch icon and the current state, such as **Planning**.
 3. Select an action pill to send its prompt or run its operation directly. Actions are disabled while that agent is running or initializing, or while an action is being dispatched. The state pill opens action descriptions, condition explanations, and command trust controls.
 4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
 
+Setup requests appear as a compact Flowstate card in the conversation. Expand **Details** to read the full instructions; the agent still receives the complete prompt.
+
 Click the current state pill to open compact action buttons, condition explanations, command trust controls, and **Change state** buttons for the allowed next states. Hover over an action button on desktop or web to read its full prompt or operation description. The same text is available as an accessibility hint. State changes do not send a prompt and remain available while the agent is running. There is no separate agent panel or slash command. Command Center actions are deferred until Paseo can filter them by the focused workspace and agent.
 
-Agents created before MCP injection was installed need to be replaced with a new agent. The same applies if the workflow file was added after the agent was created. Paseo's current plugin API can inject MCP configuration on creation, but cannot add it to an existing agent. The UI explains this and disables its prompt actions. Creating a new agent in the same workspace preserves the workflow state.
+Agents created before MCP injection was installed need to be replaced with a new agent. New agents receive the tools even when no workflow file exists yet. Paseo's current plugin API can inject MCP configuration on creation, but cannot add it to an existing agent. The UI explains this and disables its prompt actions. Creating a new agent in the same workspace preserves the workflow state.
 
 ## Define a workflow
 
@@ -162,12 +164,15 @@ Users can select an allowed next state from the current state pill's popover wit
 
 Successful transitions add a Flowstate entry to the initiating agent's timeline showing the previous state, next state, and whether the user or agent made the change. These entries are display feedback, not the saved state or a durable audit log. Timeline publication is best effort; a publication error is logged without undoing the state change. After a plugin reload, an agent transition may wait for the next lifecycle callback or workflow read to obtain Paseo's connection before publishing its entry.
 
-The injected MCP server exposes two tools:
+The injected MCP server exposes three tools:
 
 | Tool | Behavior |
 | --- | --- |
-| `workflow_get_state` | Returns the current state, workflow definition, revision, and definition version. Takes no arguments. |
+| `workflow_get_state` | Returns the current state, workflow definition, revision, and definition version, or a missing/error status. Takes no arguments. |
+| `workflow_validate` | Validates the workspace YAML with the runtime parser and schema. Returns valid with a definition version, or invalid/missing/error with diagnostics. Takes no arguments. |
 | `workflow_transition` | Takes `target`, `expectedState`, `expectedRevision`, and `definitionVersion`. Validates and saves an allowed transition. |
+
+Validation does not initialize or change saved workflow state or run custom condition commands. It checks the definition only; use `workflow_get_state` to check compatibility with existing saved state. The setup prompt requires agents to fix validation errors and repeat until valid. This is agent guidance, not an enforced gate on file writes.
 
 Paseo supplies the workspace identity when the agent session opens. Tool calls cannot choose another workspace or provide a file path. Agents in different workspaces remain separate even if those workspaces use the same directory.
 

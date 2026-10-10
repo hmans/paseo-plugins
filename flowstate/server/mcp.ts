@@ -4,17 +4,17 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { readySchema, transitionSchema, type ReadyWorkflow, type Transition } from "../shared/workflow";
-import { atomicWrite, errorMessage, isMissing, requireReady, WorkflowStore } from "./store";
+import { readySchema, validationSchema, transitionSchema, type ReadyWorkflow, type Transition } from "../shared/workflow";
+import { atomicWrite, errorMessage, isMissing, validateWorkflow, WorkflowStore } from "./store";
 import { WorkspaceBindings, type BoundWorkspace } from "./bindings";
 
 type OnTransition = (scope: BoundWorkspace, input: Transition, snapshot: ReadyWorkflow) => Promise<void>;
 
 function createWorkflowMcp(store: WorkflowStore, scope: BoundWorkspace, onTransition?: OnTransition) {
   const mcp = new McpServer({ name: "flowstate", version: "0.1.0" }, {
-    instructions: "This workspace has a project workflow. Use workflow_get_state to read its state and available transitions. Use workflow_transition when the task's criteria are met. State is shared by all agents in this workspace. Do not edit saved state files.",
+    instructions: "Flowstate supports optional workspace workflows. Use workflow_validate to check .paseo/flowstate.yml against the runtime schema without changing state. Use workflow_get_state to read its state and available transitions; if missing, continue normal work unless setup was requested. Use workflow_transition when the task's criteria are met. State is shared by all agents in this workspace. Do not edit saved state files.",
   });
-  const result = async (operation: () => Promise<ReadyWorkflow>) => {
+  const result = async <T extends object>(operation: () => Promise<T>) => {
     try {
       const snapshot = await operation();
       return { content: [{ type: "text" as const, text: JSON.stringify(snapshot) }], structuredContent: snapshot };
@@ -24,11 +24,18 @@ function createWorkflowMcp(store: WorkflowStore, scope: BoundWorkspace, onTransi
   };
   mcp.registerTool("workflow_get_state", {
     title: "Read workspace workflow",
-    description: "Read this agent's workspace state, configured prompts, allowed transitions, revision, and definitionVersion. No workspace ID or file path is needed. Read before requesting a transition.",
+    description: "Read this agent's workspace state, configured prompts, allowed transitions, revision, and definitionVersion. Returns missing if no workflow exists, or error for invalid configuration/state. No workspace ID or file path is needed. Read before requesting a transition.",
     inputSchema: z.object({}).strict(),
-    outputSchema: readySchema,
+    outputSchema: readySchema.partial().extend({ status: z.enum(["ready", "missing", "error"]), message: z.string().optional() }),
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, () => result(async () => requireReady(await store.inspect(scope.workspaceId, scope.cwd))));
+  }, () => result(() => store.inspect(scope.workspaceId, scope.cwd)));
+  mcp.registerTool("workflow_validate", {
+    title: "Validate workspace workflow",
+    description: "Validate this workspace's .paseo/flowstate.yml using Flowstate's actual YAML parser and schema. Call after creating or editing it; fix errors and repeat until valid before declaring setup complete. Returns valid with definitionVersion, or invalid/missing/error with a diagnostic message. Does not initialize or change saved state, execute conditions, or validate saved-state compatibility. No workspace ID, file path, or arguments are accepted.",
+    inputSchema: z.object({}).strict(),
+    outputSchema: validationSchema,
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, () => result(() => validateWorkflow(scope.cwd)));
   mcp.registerTool("workflow_transition", {
     title: "Change workspace workflow state",
     description: "Move this agent's workspace to an allowed next state after its task criteria are met. First call workflow_get_state. Supply that result's state as expectedState, revision as expectedRevision, and definitionVersion unchanged. If the workflow changed, read it again and reassess your work before retrying. This changes shared workflow state; it does not send prompts or start agents.",
