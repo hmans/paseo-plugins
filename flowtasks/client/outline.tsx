@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Platform, Pressable, Switch, Text, TextInput, View, type PressableProps } from "react-native";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Platform, Pressable, Switch, Text, TextInput, View, type PressableProps, type ViewProps } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRpc, useWorkspace, type PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
@@ -14,14 +14,27 @@ import { descriptionBoundary } from "./caret";
 type Draft = { base: string; text: string; description?: { base: string; text: string } };
 type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; currentTarget?: unknown; preventDefault(): void };
 
-function TaskActionButton({ theme, disabled, ...props }: Omit<PressableProps, "style"> & { theme: PluginWorkspacePanelProps["theme"] }) {
+function TaskActionButton({ disabled, children, ...props }: Omit<PressableProps, "style" | "children"> & {
+  children: (active: boolean) => ReactNode;
+}) {
   const [hovered, setHovered] = useState(false);
   return <Pressable {...props} disabled={disabled}
     onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}
-    style={({ pressed }) => ({
-      padding: 8, borderRadius: 6, opacity: disabled ? 0.35 : 1,
-      backgroundColor: disabled ? "transparent" : pressed ? theme.colors.surface2 : hovered ? theme.colors.surface1 : "transparent",
-    })} />;
+    style={{ padding: 8, opacity: disabled ? 0.35 : 1 }}>
+    {({ pressed }) => children(!disabled && (hovered || pressed))}
+  </Pressable>;
+}
+
+function CompletionHandle({ children, ...props }: Omit<ViewProps, "children"> & { children: (active: boolean) => ReactNode }) {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return <View {...props}
+    onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}
+    onResponderGrant={event => { setPressed(true); props.onResponderGrant?.(event); }}
+    onResponderRelease={event => { setPressed(false); props.onResponderRelease?.(event); }}
+    onResponderTerminate={event => { setPressed(false); props.onResponderTerminate?.(event); }}>
+    {children(hovered || pressed)}
+  </View>;
 }
 
 export function OutlinePanel(props: PluginWorkspacePanelProps) {
@@ -302,7 +315,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
             <Icon name="ChevronDown" size={14} color={c.foregroundMuted} />
           </View>}
         </Pressable>
-        <View {...drag.handle(item.id, () => complete(item.id), !filtering)} accessibilityRole="checkbox" accessible focusable
+        <CompletionHandle {...drag.handle(item.id, () => complete(item.id), !filtering)} accessibilityRole="checkbox" accessible focusable
           accessibilityLabel={`Complete ${item.text || "task"}`} accessibilityState={{ checked: item.completed }}
           accessibilityHint={filtering ? "Click to toggle completion." : "Click to toggle completion. Drag to move the task."}
           accessibilityActions={[{ name: "activate", label: "Toggle completion" }]}
@@ -315,8 +328,8 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
             }
           } } : {})}
           style={{ paddingVertical: 6, paddingRight: 8, ...(Platform.OS === "web" ? { cursor: "pointer" as const, touchAction: "none", userSelect: "none" as const } : {}) }}>
-          <Icon name={item.completed ? "CircleCheck" : "Circle"} size={14} color={item.completed ? c.accent : c.foregroundMuted} />
-        </View>
+          {active => <Icon name={item.completed ? "CircleCheck" : "Circle"} size={14} color={active ? c.foreground : item.completed ? c.accent : c.foregroundMuted} />}
+        </CompletionHandle>
         <View style={{ flex: 1, minWidth: 0 }}>
         <TextInput ref={field => { if (field) fields.current.set(item.id, field); else fields.current.delete(item.id); }}
           accessibilityLabel="Task title" placeholder="Task title" placeholderTextColor={c.foregroundMuted} editable={!hidden}
@@ -354,7 +367,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
             opacity: effectiveCompleted.has(item.id) ? 0.5 : 1,
             textDecorationLine: effectiveCompleted.has(item.id) ? "line-through" : "none" }} />}
         </View>
-        <TaskActionButton theme={theme} accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
+        <TaskActionButton accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
           accessibilityHint="Send this task and its subtasks to the most recently used agent in this workspace."
           accessibilityState={{ disabled: hidden || saving || work.isPending || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim() }}
           disabled={hidden || saving || work.isPending || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim()}
@@ -367,13 +380,13 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
             });
             void queue.current.finally(() => { workPending.current = false; });
           }}>
-          <Icon name="Play" size={14} color={c.accent} />
+          {active => <Icon name="Play" size={14} color={active ? c.foreground : c.accent} />}
         </TaskActionButton>
-        <TaskActionButton theme={theme} accessibilityRole="button" accessibilityLabel={`Delete task: ${item.text || "task"}`}
+        <TaskActionButton accessibilityRole="button" accessibilityLabel={`Delete task: ${item.text || "task"}`}
           accessibilityHint="Ask for confirmation before deleting this task and all its subtasks."
           accessibilityState={{ disabled: hidden || saving }} disabled={hidden || saving}
           onPress={() => setDeleteTarget({ id: item.id, text: drafts.current.get(item.id)?.text ?? item.text })}>
-          <Icon name="Trash2" size={14} color={c.foregroundMuted} />
+          {active => <Icon name="Trash2" size={14} color={active ? c.foreground : c.foregroundMuted} />}
         </TaskActionButton>
       </View></FoldRow>)}
       {data && !items.length && <Pressable accessibilityRole="button" onPress={() => add()} style={{ padding: 12 }}>
