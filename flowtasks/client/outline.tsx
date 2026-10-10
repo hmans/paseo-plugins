@@ -4,6 +4,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRpc, useWorkspace, type PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { changeOutline, children, getOutline, type Action, type Item, type Outline } from "../shared/tasks";
+import { dropAction, structure } from "../shared/drag";
+import { useOutlineDrag } from "./drag";
+import { FoldRow, useReducedMotion } from "./fold";
 
 type Draft = { base: string; text: string };
 type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; preventDefault(): void };
@@ -14,6 +17,7 @@ export function OutlinePanel(props: PluginWorkspacePanelProps) {
 
 function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps) {
   const c = theme.colors;
+  const reducedMotion = useReducedMotion();
   const name = useWorkspace(workspaceId, workspace => workspace.name);
   const get = useRpc(getOutline);
   const change = useRpc(changeOutline);
@@ -43,6 +47,17 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
   if (query.data && query.data.revision >= latest.current.revision) latest.current = query.data;
   const data = query.data;
   const items = data?.items ?? [];
+  const drag = useOutlineDrag(items, ({ sourceId, target, items: original }) => {
+    if (!target) return;
+    enqueue(async () => {
+      if (structure(original) !== structure(latest.current.items)) throw new Error("The task order changed while dragging. Try the move again.");
+      const action = dropAction(latest.current.items, sourceId, target);
+      if (!action) return;
+      await apply(action);
+      if (target.position === "inside") setCollapsed(value => { const next = new Set(value); next.delete(target.id); return next; });
+      focus(sourceId);
+    });
+  });
 
   function accept(outline: Outline) {
     latest.current = outline;
@@ -132,17 +147,19 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
     });
   }
   const visible: { item: Item; depth: number }[] = [];
+  const rendered: { item: Item; depth: number; hidden: boolean }[] = [];
   const groups = new Map<string | null, Item[]>();
   for (const item of items) {
     const group = groups.get(item.parentId) ?? [];
     group.push(item);
     groups.set(item.parentId, group);
   }
-  const pending = (groups.get(null) ?? []).map(item => ({ item, depth: 0 })).reverse();
+  const pending = (groups.get(null) ?? []).map(item => ({ item, depth: 0, hidden: false })).reverse();
   while (pending.length) {
     const entry = pending.pop()!;
-    visible.push(entry);
-    if (!collapsed.has(entry.item.id)) pending.push(...(groups.get(entry.item.id) ?? []).map(item => ({ item, depth: entry.depth + 1 })).reverse());
+    rendered.push(entry);
+    if (!entry.hidden) visible.push(entry);
+    pending.push(...(groups.get(entry.item.id) ?? []).map(item => ({ item, depth: entry.depth + 1, hidden: entry.hidden || collapsed.has(entry.item.id) })).reverse());
   }
   function removeEmpty(id: string) {
     const previousId = visible[visible.findIndex(entry => entry.item.id === id) - 1]?.item.id;
@@ -156,6 +173,7 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
   function keyPress(event: KeyEvent, item: Item) {
     const key = event.nativeEvent;
     if (key.isComposing) return;
+    if (key.key === "Escape" && drag.drag) { event.preventDefault(); drag.cancel(); return; }
     if (key.key === "Tab") { event.preventDefault(); indent(item.id, !!key.shiftKey); }
     else if (key.key === "Enter" && (key.ctrlKey || key.metaKey)) { event.preventDefault(); complete(item.id); }
     else if (key.key === "Enter" && !key.shiftKey) { event.preventDefault(); add(item.id); }
@@ -193,18 +211,40 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
       </Pressable>
     </View>}
     {query.isPending && <Text style={{ ...muted, padding: 20 }}>Loading tasks…</Text>}
-    <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: layout.compact ? 8 : 20, paddingBottom: 40 }}>
-      {visible.map(({ item, depth }) => <View key={item.id} style={{ marginLeft: Math.min(depth, layout.compact ? 5 : 12) * 20, flexDirection: "row", alignItems: "flex-start" }}>
+    <View ref={drag.viewport} style={{ flex: 1, overflow: "hidden" }}>
+    <ScrollView ref={drag.scroll} style={{ flex: 1 }} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}
+      onScroll={event => drag.onScroll(event.nativeEvent.contentOffset.y)} onContentSizeChange={(_width, height) => drag.onContentSize(height)}
+      contentContainerStyle={{ paddingHorizontal: layout.compact ? 8 : 20, paddingBottom: 40 }}>
+      {rendered.map(({ item, depth, hidden }) => <FoldRow key={item.id} open={!hidden} reducedMotion={reducedMotion}>
+        <View ref={row => { if (row && !hidden) drag.rows.current.set(item.id, row); else drag.rows.current.delete(item.id); }}
+        style={{ marginLeft: Math.min(depth, layout.compact ? 5 : 12) * 20, flexDirection: "row", alignItems: "flex-start",
+          opacity: drag.drag?.sourceId === item.id ? 0.4 : 1,
+          backgroundColor: drag.drag?.target?.id === item.id && drag.drag.target.position === "inside" ? c.surface2 : "transparent" }}>
         <Pressable accessibilityRole="button" accessibilityLabel={`${collapsed.has(item.id) ? "Expand" : "Collapse"} task`} disabled={!groups.has(item.id)}
           onPress={() => setCollapsed(value => { const next = new Set(value); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })}
           style={{ width: 22, paddingVertical: 6 }}>
-          {groups.has(item.id) && <Icon name={collapsed.has(item.id) ? "ChevronRight" : "ChevronDown"} size={14} color={c.foregroundMuted} />}
+          {groups.has(item.id) && <View style={{ transform: [{ rotate: collapsed.has(item.id) ? "-90deg" : "0deg" }],
+            ...(Platform.OS === "web" ? { transitionProperty: "transform", transitionDuration: reducedMotion ? "0ms" : "160ms", transitionTimingFunction: "ease-out" } : {}) }}>
+            <Icon name="ChevronDown" size={14} color={c.foregroundMuted} />
+          </View>}
         </Pressable>
-        <Pressable accessibilityRole="checkbox" accessibilityLabel={`Complete ${item.text || "task"}`} accessibilityState={{ checked: item.completed }} onPress={() => complete(item.id)} style={{ paddingVertical: 6, paddingRight: 8 }}>
+        <View {...drag.handle(item.id, () => complete(item.id))} accessibilityRole="checkbox" accessible focusable
+          accessibilityLabel={`Complete ${item.text || "task"}`} accessibilityState={{ checked: item.completed }}
+          accessibilityHint="Click to toggle completion. Drag to move the task."
+          accessibilityActions={[{ name: "activate", label: "Toggle completion" }]}
+          onAccessibilityAction={event => { if (event.nativeEvent.actionName === "activate") complete(item.id); }}
+          {...(Platform.OS === "web" ? { onKeyDown: (event: { nativeEvent: { key: string; repeat?: boolean }; preventDefault(): void }) => {
+            if (event.nativeEvent.key === "Escape") { drag.cancel(); return; }
+            if (event.nativeEvent.key === " " || event.nativeEvent.key === "Enter") {
+              event.preventDefault();
+              if (!event.nativeEvent.repeat) complete(item.id);
+            }
+          } } : {})}
+          style={{ paddingVertical: 6, paddingRight: 8, ...(Platform.OS === "web" ? { cursor: "pointer" as const, touchAction: "none", userSelect: "none" as const } : {}) }}>
           <Icon name={item.completed ? "CircleCheck" : "Circle"} size={14} color={item.completed ? c.accent : c.foregroundMuted} />
-        </Pressable>
+        </View>
         <TextInput ref={field => { if (field) fields.current.set(item.id, field); else fields.current.delete(item.id); }}
-          accessibilityLabel="Task" placeholder="Task" placeholderTextColor={c.foregroundMuted}
+          accessibilityLabel="Task" placeholder="Task" placeholderTextColor={c.foregroundMuted} editable={!hidden}
           multiline numberOfLines={1} scrollEnabled={false} value={drafts.current.get(item.id)?.text ?? item.text} onChangeText={text => edit(item, text)}
           onContentSizeChange={event => {
             if (Platform.OS === "web") return;
@@ -218,7 +258,7 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
           style={{ flex: 1, minWidth: 0, minHeight: 26, fontSize: 14, lineHeight: 20, paddingVertical: 3, paddingHorizontal: 0, borderWidth: 0, backgroundColor: "transparent", textAlignVertical: "top",
             ...(Platform.OS === "web" ? { outlineWidth: 0, fieldSizing: "content", resize: "none" } : { height: rowHeights[item.id] ?? 26 }),
             color: item.completed ? c.foregroundMuted : c.foreground, textDecorationLine: item.completed ? "line-through" : "none" }} />
-      </View>)}
+      </View></FoldRow>)}
       {data && !items.length && <Pressable accessibilityRole="button" onPress={() => add()} style={{ padding: 12 }}>
         <Text style={{ color: c.foregroundMuted, fontSize: 15 }}>+ Start your first task</Text>
       </Pressable>}
@@ -232,5 +272,11 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
         </Pressable>)}
       </View>}
     </ScrollView>
+    {/* One overlay centered on the shared row boundary, outside folding clips. */}
+    <View pointerEvents="none" style={{ position: "absolute", height: 2, backgroundColor: c.accent,
+      opacity: drag.lineY === null ? 0 : 1, top: (drag.lineY ?? 0) - 1,
+      left: (layout.compact ? 8 : 20) + Math.min(visible.find(entry => entry.item.id === drag.drag?.target?.id)?.depth ?? 0, layout.compact ? 5 : 12) * 20,
+      right: layout.compact ? 8 : 20 }} />
+    </View>
   </View>;
 }

@@ -28,6 +28,8 @@ Click task text to edit it. Text saves after a short pause, on blur, and before 
 
 Use the circle beside a task to toggle completion and the chevron to collapse its children. The small toolbar provides add, indent, and outdent controls on touch devices. Completing a parent does not complete its children.
 
+Drag the checkbox circle beside a task to move it with its children. Clicking the circle without dragging toggles completion. Drop near the top or bottom of another row to place it before or after that task; drop in the middle to nest it inside. A line marks insertion points and a highlighted row marks nesting. The outline scrolls when you hold the drag near its top or bottom edge. Concurrent changes to the task order cancel the move so you can review the new order.
+
 ## Agent tools
 
 The plugin injects an HTTP MCP server into newly created agents. `flowtasks_get` reads the outline; `flowtasks_change` creates, updates, moves, or deletes a task. Each change must include the revision returned by the last read. A conflict requires a fresh read and review before another attempt.
