@@ -25,9 +25,9 @@ Plugins must be enabled on the target daemon. This plugin's installation ID is `
 1. In a workspace without a workflow, open **Set up workflow** and choose **Set up workflow** in the setup card. The agent receives a bundled authoring guide and a complete Planning → Implementing → Reviewing → Done example to adapt to your project. New agents receive workflow tools before the file exists. The setup prompt requires `workflow_validate` and correction of any errors before reporting success. Older agents without the tool need to be replaced to finish validation. You can also add `.paseo/flowstate.yml` manually. The repository root includes a Planning → Implementing → Reviewing → Done example in [`.paseo/flowstate.yml`](../.paseo/flowstate.yml).
 2. Create a new agent in that workspace after the plugin is running. Its composer shows a branch icon and the current state, such as **Planning**.
 3. Select an action pill to send its prompt or run its operation directly. Actions are disabled while that agent is running or initializing, or while an action is being dispatched. The state pill opens action descriptions, condition explanations, and command trust controls.
-4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
+4. The agent receives the full configured prompt with a small action header. Its injected MCP tools let it read and change the workspace state.
 
-Setup requests appear as a compact Flowstate card in the conversation. Expand **Details** to read the full instructions; the agent still receives the complete prompt.
+Setup requests and newly sent prompt actions appear as compact Flowstate cards in the conversation. Expand **Details** to read the full instructions; the agent still receives the complete prompt.
 
 Click the current state pill to open compact action buttons, condition explanations, command trust controls, and **Change state** buttons for the allowed next states. Hover over an action button on desktop or web to read its full prompt or operation description. The same text is available as an accessibility hint. State changes do not send a prompt and remain available while the agent is running. There is no separate agent panel or slash command. Command Center actions are deferred until Paseo can filter them by the focused workspace and agent.
 

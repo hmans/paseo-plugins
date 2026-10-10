@@ -10,6 +10,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { startWorkflowMcp } from "./mcp";
 import { MCP_NAME, TOKEN_ENV, registerMcpInjection } from "./injection";
 import { assertCurrent, parseWorkflow, requireReady, WorkflowStore } from "./store";
+import { parseActionCard } from "../shared/action-card";
 import { exampleWorkflow, setupPrompt } from "../shared/setup";
 import { readySchema, snapshotSchema, validationSchema, type ReadyWorkflow } from "../shared/workflow";
 
@@ -323,7 +324,7 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     await handlers.get("workflow.run-action")!(input, context);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].agentId, "selected-agent");
-    assert.equal(sent[0].text, "Write a plan.");
+    assert.deepEqual(parseActionCard(sent[0].text), { label: "Plan", icon: "Send", prompt: "Write a plan." });
     assert.equal(requireReady(await store.inspect("one", cwd)).state, "planning");
     let refreshCount = 0;
     const becomingBusy = { paseo: { ...context.paseo, agents: { ref: () => ({
@@ -350,7 +351,8 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
     await assert.rejects(handlers.get("workflow.run-action")!(conditionalInput, context), /condition is no longer met/);
     assert.equal(sent.length, 1);
     await handlers.get("workflow.run-action")!({ ...conditionalInput, action: "Common" }, context);
-    assert.deepEqual(sent[1], { agentId: "selected-agent", text: "Common prompt." });
+    assert.equal(sent[1].agentId, "selected-agent");
+    assert.deepEqual(parseActionCard(sent[1].text), { label: "Common", icon: "Send", prompt: "Common prompt." });
     assert.equal(requireReady(await store.inspect("one", cwd)).state, "implementing");
   } finally {
     await cleanup();

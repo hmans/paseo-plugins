@@ -81,7 +81,7 @@ and discuss changes if another agent or user has created it in the meantime.
 
 How Flowstate works:
 - A workspace shares one saved state across its agents. States describe stages of work.
-- Actions are buttons. A prompt action sends exactly its prompt to the selected agent.
+- Actions are buttons. A prompt action sends its full prompt with an action header to the selected agent.
   Clicking it does not change state. Prompts should explain both what to do and when
   to transition. The agent judges completion criteria; the graph only limits destinations.
 - Agents read workflow_get_state before calling workflow_transition with target,

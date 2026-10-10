@@ -2,6 +2,7 @@ import type { PluginServerContext, PluginHandlerContext } from "@getpaseo/plugin
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getWorkflow, runAction, setCommandTrust, transitionWorkflow, workflowActions, type Transition, type ReadyWorkflow } from "./shared/workflow";
+import { actionMessage } from "./shared/action-card";
 import { setupPrompt, setupWorkflow } from "./shared/setup";
 import { publishTransition } from "./server/timeline";
 import { Conditions } from "./server/conditions";
@@ -112,7 +113,7 @@ export default function contribute(server: PluginServerContext) {
         await operationHandlers[action.operation](input.workspaceId, context);
         return { executed: true as const };
       }
-      await agent.send(action.prompt);
+      await agent.send(actionMessage(action));
       return { sent: true as const };
     });
   });
