@@ -1,0 +1,7 @@
+{
+  "id": "flowtasks",
+  "name": "Flowtasks",
+  "description": "Workspace task outlines shared by people and agents",
+  "build": [["npm", "ci", "--omit=dev"]],
+  "requirements": { "paseo": ">=0.11.2" }
+}
