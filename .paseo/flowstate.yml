@@ -18,14 +18,31 @@ states:
         icon: Search
         prompt: |
           Explore the requirements for the current task.
+          Read flowtasks_get for this workspace's existing tasks and descriptions.
+          Use the task selected in the conversation, if any, and its subtasks as scope.
+          Otherwise, establish the scope with the user; do not assume all workspace tasks
+          belong to this work. Flowtasks is the workspace's working outline.
+          If the Flowtasks tools are missing, report that and stop this action.
           Identify open questions and discuss them with the user.
           Stay in planning until a plan is agreed.
       - label: Write a plan
         icon: ListTodo
         prompt: |
-          Write a concrete implementation plan for the current task.
+          Fill this workspace's Flowtasks outline with concrete implementation tasks
+          for the work discussed with the user.
+          Read the existing outline with flowtasks_get, then use flowtasks_batch
+          for a plan or flowtasks_change for one edit. If batch is unavailable, use
+          individual changes. Use short titles in text and put requirements,
+          acceptance criteria, and verification details in description.
+          Build on existing tasks and avoid duplicates.
+          Limit edits to the agreed work or selected task and its subtasks.
+          Retain completed and unrelated tasks. Do not create a separate backlog.
+          Use the current outline revision for each write. On a conflict, read again
+          and reassess before editing. If required tools are missing, report that and stop.
           Ask the user to resolve any blocking decisions.
-          Once the plan is agreed, transition the workspace to implementing.
+          Once the plan is agreed and recorded in Flowtasks, transition the workspace
+          to implementing using workflow_get_state and workflow_transition with
+          the returned state, revision, and definitionVersion. Re-read on a conflict.
     transitions: [implementing]
 
   implementing:
@@ -36,12 +53,32 @@ states:
         icon: Code
         prompt: |
           Implement the agreed plan and run the relevant checks.
-          When the changes are ready for review, transition to reviewing.
+          Read flowtasks_get, including completed tasks, for the agreed scope or the
+          task selected in the conversation and its subtasks. Do not work on unrelated
+          workspace tasks. If scope is unclear, ask the user.
+          Read descriptions and acceptance criteria. effectiveCompleted is derived:
+          a completed ancestor can hide unfinished descendants. Check their requirements;
+          do not treat inherited completion as evidence that the work was verified.
+          Use flowtasks_change to mark only verified work complete and record results
+          in descriptions. Keep blockers and remaining work visible in the outline.
+          Use current revisions; on conflicts, read again and reassess. If required
+          Flowtasks or workflow tools are missing, report that and stop this action.
+          When the scoped changes are ready for review, read workflow_get_state and
+          transition to reviewing with workflow_transition using its current state,
+          revision, and definitionVersion. Re-read on a conflict.
       - label: Revisit the plan
         icon: Undo2
         prompt: |
           Explain which parts of the plan need to change and why.
-          Transition to planning so we can revise it together.
+          Read flowtasks_get and revise only affected tasks and descriptions with
+          flowtasks_change or flowtasks_batch. Preserve completed work and unrelated tasks.
+          Record blockers and reopen affected tasks when more work is required. If a
+          completed ancestor would hide them, reopen it too within the agreed scope.
+          Use current revisions; read again and reassess on conflicts. If required tools
+          are missing, report that and stop this action.
+          Read workflow_get_state and transition to planning using workflow_transition
+          with its current state, revision, and definitionVersion so we can revise
+          the plan together. Re-read on a conflict.
     transitions: [planning, reviewing]
 
   reviewing:
@@ -52,8 +89,20 @@ states:
         icon: ScanEye
         prompt: |
           Review the changes for correctness, regressions, and missing checks.
+          Read flowtasks_get, including completed tasks, and compare the agreed scope
+          or selected task and its subtasks against their descriptions and acceptance
+          criteria. Check descendants even under completed parents; implicit completion
+          is not verification. Leave unrelated workspace tasks alone.
+          Record verification results and required fixes with flowtasks_change or
+          flowtasks_batch. Reopen affected tasks and any completed ancestors in scope
+          that would hide required fixes. Mark tasks complete only after verification.
+          Use current revisions; read again and reassess on conflicts. If required tools
+          are missing, report that and stop this action.
           If fixes are needed, summarize them and transition to implementing.
           Otherwise, report the verification results and transition to done.
+          For either transition, read workflow_get_state and use workflow_transition
+          with its returned state, revision, and definitionVersion. Re-read on a conflict.
+          Done applies to the agreed work; unrelated open workspace tasks do not block it.
     transitions: [implementing, done]
 
   done:
@@ -67,6 +116,12 @@ states:
         icon: Plus
         prompt: |
           Summarize the completed work, then ask what we should tackle next.
+          Read flowtasks_get and retain the workspace outline, including completed tasks.
+          Do not clear it or reopen unrelated tasks. Delete tasks only if the user
+          explicitly requests it. Record the next agreed work during planning.
+          If required tools are missing, report that and stop this action.
           Perform a git fetch, then move this worktree to a new branch off of origin/main.
-          Transition to planning for the next task.
+          Read workflow_get_state and use workflow_transition with its current state,
+          revision, and definitionVersion to transition to planning for the next task.
+          Re-read and reassess on a conflict.
     transitions: [planning]
