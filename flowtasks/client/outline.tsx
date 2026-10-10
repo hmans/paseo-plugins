@@ -13,7 +13,9 @@ type Draft = { base: string; text: string };
 type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; preventDefault(): void };
 
 export function OutlinePanel(props: PluginWorkspacePanelProps) {
-  return <OutlineEditor key={props.workspaceId} {...props} />;
+  return <View style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }}>
+    <OutlineEditor key={props.workspaceId} {...props} />
+  </View>;
 }
 
 function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspacePanelProps) {
@@ -191,7 +193,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   const effectiveCompleted = completedIds(items);
   const completed = effectiveCompleted.size;
   const progress = items.length ? completed / items.length : 0;
-  return <View style={{ flex: 1, backgroundColor: c.surface0 }}>
+  return <View style={{ flex: 1, width: "100%", maxWidth: 820, alignSelf: "center", backgroundColor: c.surface0 }}>
     <View style={{ paddingHorizontal: layout.compact ? 16 : 28, paddingTop: 16, paddingBottom: 12, gap: 4 }}>
       <Text style={{ color: c.foreground, fontSize: 18, fontWeight: "600" }}>{name ?? "Flowtasks"}</Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
