@@ -11,7 +11,7 @@ npm ci
 paseo plugin install .
 ```
 
-Requires Paseo 0.11.2 or later. Open **Flowtasks** from the workspace panel menu, **Open Flowtasks** in Command Center, or `/flowtasks`.
+Requires Paseo 0.11.2 or later. Open **Flowtasks** from the workspace panel menu or **Open Flowtasks** in Command Center.
 
 ## Edit tasks
 
