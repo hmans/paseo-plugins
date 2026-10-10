@@ -12,7 +12,7 @@ export function taskDispatcher(store: TaskStore, bindings: () => Promise<Pick<Wo
     try {
       const workspace = await paseo.workspaces.ref(input.workspaceId).refresh();
       if (!workspace) throw new Error("Workspace is unavailable.");
-      if (!(await bindings()).hasAgent(input.agentId, input.workspaceId)) throw new Error("Create a new agent in this workspace to load the Flowtasks tools.");
+      if (!(await bindings()).hasAgent(input.agentId, input.workspaceId)) throw new Error("Create a new agent in this workspace to load the Questlog tools.");
       const agent = paseo.agents.ref(input.agentId);
       return await store.exclusive(`outline:${input.workspaceId}`, async () => {
         const current = await agent.refresh();

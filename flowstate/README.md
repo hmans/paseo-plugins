@@ -66,21 +66,21 @@ states:
 
 The plugin reads the definition from the workspace's own directory, including its worktree. Commit it to share it with the project. Saving a valid edit updates an open workflow UI within about two seconds; a plugin reload is not needed for YAML changes.
 
-## Use Flowtasks with this repository's workflow
+## Use Questlog with this repository's workflow
 
-The repository's [workflow configuration](../.paseo/flowstate.yml) coordinates the two plugins through prompts and MCP tools. Flowtasks holds tasks within the current workspace. Planning records agreed work; implementation and review use the same outline. Titles stay short, while descriptions hold requirements, acceptance criteria, and verification results.
+The repository's [workflow configuration](../.paseo/flowstate.yml) coordinates the two plugins through prompts and MCP tools. Questlog holds tasks within the current workspace. Planning records agreed work; implementation and review use the same outline. Titles stay short, while descriptions hold requirements, acceptance criteria, and verification results.
 
-The conversation defines the scope. A task started with Flowtasks' **Work on this now** supplies its ID; the workflow can use that task and its subtasks. Without a selected task or an agreed scope, the agent asks the user. There is no separate active-plan record or task-selection channel between the plugins. Unrelated tasks are retained and do not prevent the scoped work from reaching Done. Starting new work retains completed tasks; deletion requires an explicit request.
+The conversation defines the scope. A task started with Questlog's **Work on this now** supplies its ID; the workflow can use that task and its subtasks. Without a selected task or an agreed scope, the agent asks the user. There is no separate active-plan record or task-selection channel between the plugins. Unrelated tasks are retained and do not prevent the scoped work from reaching Done. Starting new work retains completed tasks; deletion requires an explicit request.
 
 Implementation and review read the full outline, including completed tasks. `effectiveCompleted` can come from an ancestor or a complete set of children, so it is not proof of verification. Agents check the scoped descendants' requirements and reopen affected tasks and completed ancestors in scope when fixes are required.
 
 Each plugin has its own revision checks. Agents read before writing and reassess conflicts. Task edits and workflow transitions are separate operations, not one transaction: save verified task updates first, then read the current workflow and request its transition. A failed transition does not roll back task edits.
 
-Both plugins must be installed and their MCP tools available to the receiving agent. Prompts tell the agent to stop and report missing tools; Flowstate checks its own tool binding but does not detect Flowtasks availability. If needed, create a new agent after both plugins are installed. The plugins remain independently installable; only this repository's prompts require both.
+Both plugins must be installed and their MCP tools available to the receiving agent. Prompts tell the agent to stop and report missing tools; Flowstate checks its own tool binding but does not detect Questlog availability. If needed, create a new agent after both plugins are installed. The plugins remain independently installable; only this repository's prompts require both.
 
 This integration provides guidance, not completion enforcement. No native task condition or automatic selection transfer is needed for this workflow. Such APIs would be needed to disable actions based on task state or make transitions depend on task completion in the backend.
 
-Verification of this configuration used live reads from both MCP servers in the same agent, including confirmation that Flowstate loaded the edited YAML. The isolated plugin tests cover revision conflicts, workspace/token isolation, missing Flowstate bindings, and implicit completion under completed parents. Missing Flowtasks handling and scope selection remain prompt instructions rather than backend checks.
+Verification of this configuration used live reads from both MCP servers in the same agent, including confirmation that Flowstate loaded the edited YAML. The isolated plugin tests cover revision conflicts, workspace/token isolation, missing Flowstate bindings, and implicit completion under completed parents. Missing Questlog handling and scope selection remain prompt instructions rather than backend checks.
 
 ## Common actions
 

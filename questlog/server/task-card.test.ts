@@ -15,7 +15,7 @@ test("task cards preserve the original prompt and multiline task text", () => {
 
 test("unrelated, partial and edited messages retain the normal renderer", () => {
   const original = prompt("Build the button");
-  for (const message of ["Hello", "Work on this Flowtasks task: some idea", original.slice(0, -1),
+  for (const message of ["Hello", "Work on this Questlog task: some idea", original.slice(0, -1),
     `Please explain this:\n${original}`, `${original}\nAnd do something else`,
     original.replace("Task ID: task-123", "Task ID: "), original.replace("Task ID: task-123", "Task ID: two words")]) {
     assert.equal(parseTaskCard(message), undefined);

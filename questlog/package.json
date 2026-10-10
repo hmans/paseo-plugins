@@ -1,5 +1,5 @@
 {
-  "name": "flowtasks",
+  "name": "questlog",
   "private": true,
   "version": "0.1.0",
   "files": ["paseo-plugin.json", "OVERVIEW.md", "index.client.tsx", "index.server.ts", "client/", "server/", "shared/"],

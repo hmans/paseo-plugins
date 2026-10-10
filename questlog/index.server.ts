@@ -1,6 +1,5 @@
 import type { PluginServerContext, PluginHandlerContext } from "@getpaseo/plugin/server";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { taskDirectory } from "./server/directory";
 import { getOutline, changeOutline } from "./shared/tasks";
 import { message, TaskStore } from "./server/store";
 import { startTaskMcp } from "./server/mcp";
@@ -9,10 +8,10 @@ import { workOnTask } from "./shared/work";
 import { taskDispatcher } from "./server/work";
 
 export default function contribute(server: PluginServerContext) {
-  const directory = process.env.PASEO_FLOWTASKS_DATA_DIR ?? join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "flowtasks");
+  const directory = taskDirectory();
   const store = new TaskStore(directory);
   const mcp = startTaskMcp(store);
-  void mcp.catch(error => console.error("Flowtasks MCP failed:", message(error)));
+  void mcp.catch(error => console.error("Questlog MCP failed:", message(error)));
   registerMcpInjection(server, mcp);
   server.handle(workOnTask, taskDispatcher(store, async () => (await mcp).bindings));
   async function requireWorkspace(workspaceId: string, { paseo }: PluginHandlerContext) {

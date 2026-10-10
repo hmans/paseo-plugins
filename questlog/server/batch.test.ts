@@ -7,7 +7,7 @@ import { TaskStore } from "./store";
 import { batchSchema, children, type BatchAction } from "../shared/tasks";
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
-  const directory = await mkdtemp(join(tmpdir(), "flowtasks-batch-"));
+  const directory = await mkdtemp(join(tmpdir(), "questlog-batch-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   return new TaskStore(directory);
 }

@@ -17,7 +17,7 @@ export function useWorkOnTask(workspaceId: string) {
     return lastUsedAgent(agents, workspaceId) ?? null;
   }
   const target = useQuery({
-    queryKey: ["flowtasks-target-agent", workspaceId], queryFn: getTarget,
+    queryKey: ["questlog-target-agent", workspaceId], queryFn: getTarget,
     refetchInterval: 2000, retry: false,
   });
   const status = useAgent(target.data?.id ?? "", agent => agent.status);

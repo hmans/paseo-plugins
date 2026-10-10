@@ -5,7 +5,7 @@ A collection of plugins for Paseo. Each plugin lives in its own directory and ca
 | Plugin | Description |
 | --- | --- |
 | [Flowstate](flowstate/README.md) | Configurable workflow states, prompt actions, and Paseo operations in composer pills. |
-| [Flowtasks](flowtasks/README.md) | Workspace task outlines with inline editing and agent MCP tools. |
+| [Questlog](questlog/README.md) | Workspace task outlines with inline editing and agent MCP tools. |
 
 ## Install Flowstate
 

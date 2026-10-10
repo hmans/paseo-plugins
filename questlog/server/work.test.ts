@@ -10,7 +10,7 @@ import { WorkspaceBindings } from "./bindings";
 import { taskDispatcher } from "./work";
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
-  const directory = await mkdtemp(join(tmpdir(), "flowtasks-work-"));
+  const directory = await mkdtemp(join(tmpdir(), "questlog-work-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const store = new TaskStore(directory);
   const outline = await store.change("workspace", 0, { type: "create", parentId: null, text: "Build the button" });
@@ -28,13 +28,13 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
     input: { workspaceId: "workspace", agentId: "agent", taskId: outline.items[0].id, expectedRevision: outline.revision } };
 }
 
-test("prompt identifies the selected task and leaves context retrieval to Flowtasks", () => {
+test("prompt identifies the selected task and leaves context retrieval to Questlog", () => {
   const item = (id: string, parentId: string | null, completed = false) => ({ id, parentId, completed, text: id });
   const prompt = taskPrompt({ revision: 3, items: [item("parent", null), item("selected", "parent", true), item("other", "parent"), item("child", "selected")] }, "selected");
-  assert.match(prompt, /Work on this Flowtasks task: selected/);
+  assert.match(prompt, /Work on this Questlog task: selected/);
   assert.match(prompt, /Task ID: selected/);
-  assert.match(prompt, /flowtasks_get/);
-  assert.match(prompt, /flowtasks_change/);
+  assert.match(prompt, /questlog_get/);
+  assert.match(prompt, /questlog_change/);
   assert.doesNotMatch(prompt, /parent|other|child|\{/);
   assert.throws(() => taskPrompt({ revision: 0, items: [] }, "missing"), /deleted/);
   assert.throws(() => taskPrompt({ revision: 0, items: [{ ...item("blank", null), text: "  " }] }, "blank"), /description/);
@@ -46,7 +46,7 @@ test("dispatch sends the saved task and leaves completion unchanged", async t =>
   assert.deepEqual(await f.dispatch(f.input, f.context), { sent: true });
   assert.equal(f.sent.length, 1);
   assert.match(f.sent[0], /Build the button/);
-  assert.match(f.sent[0], /flowtasks_get/);
+  assert.match(f.sent[0], /questlog_get/);
   assert.deepEqual(await f.store.read("workspace"), before);
 });
 
@@ -54,8 +54,8 @@ test("dispatch rejects stale revisions, missing tasks, and agents without worksp
   const f = await fixture(t);
   await assert.rejects(f.dispatch({ ...f.input, expectedRevision: 0 }, f.context), /tasks changed/);
   await assert.rejects(f.dispatch({ ...f.input, taskId: "deleted" }, f.context), /deleted/);
-  await assert.rejects(f.dispatch({ ...f.input, agentId: "old-agent" }, f.context), /load the Flowtasks tools/);
-  await assert.rejects(f.dispatch({ ...f.input, workspaceId: "other" }, f.context), /load the Flowtasks tools/);
+  await assert.rejects(f.dispatch({ ...f.input, agentId: "old-agent" }, f.context), /load the Questlog tools/);
+  await assert.rejects(f.dispatch({ ...f.input, workspaceId: "other" }, f.context), /load the Questlog tools/);
   assert.equal(f.sent.length, 0);
 });
 

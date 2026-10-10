@@ -1,14 +1,14 @@
 import { z } from "zod";
 
-export const taskPromptPrefix = "Work on this Flowtasks task: ";
-export const taskPromptInstructions = "Read flowtasks_get for context and subtasks. Focus on this task and mark verified work complete with flowtasks_change.";
+export const taskPromptPrefix = "Work on this Questlog task: ";
+export const taskPromptInstructions = "Read questlog_get for context and subtasks. Focus on this task and mark verified work complete with questlog_change.";
 export const taskCardSchema = z.object({
   taskId: z.string().min(1).max(200),
   text: z.string().min(1).max(10000),
   prompt: z.string(),
 });
 
-// Only claim the complete prompt format emitted by Flowtasks. Other messages
+// Only claim the complete prompt format emitted by Questlog. Other messages
 // retain Paseo's normal renderer, including partial or edited prompts.
 export function parseTaskCard(prompt: string): z.output<typeof taskCardSchema> | undefined {
   const suffix = `\n\n${taskPromptInstructions}`;

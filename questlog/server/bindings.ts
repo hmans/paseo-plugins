@@ -38,14 +38,14 @@ export class WorkspaceBindings {
     await this.store.exclusive("bindings", async () => {
       const key = digest(token);
       const existing = this.bindings[key];
-      if (!existing || existing.cwd !== canonical) throw new Error("Flowtasks token does not match this directory.");
-      if ((existing.agentId && existing.agentId !== agentId) || (existing.workspaceId && existing.workspaceId !== workspaceId)) throw new Error("Flowtasks token belongs to another agent or workspace.");
+      if (!existing || existing.cwd !== canonical) throw new Error("Questlog token does not match this directory.");
+      if ((existing.agentId && existing.agentId !== agentId) || (existing.workspaceId && existing.workspaceId !== workspaceId)) throw new Error("Questlog token belongs to another agent or workspace.");
       await this.update(key, { cwd: canonical, agentId, workspaceId });
     });
   }
   async resume(agentId: string, workspaceId: string) {
     const binding = Object.values(this.bindings).find(binding => binding.agentId === agentId);
-    if (binding && binding.workspaceId !== workspaceId) throw new Error("Flowtasks token cannot move to another workspace.");
+    if (binding && binding.workspaceId !== workspaceId) throw new Error("Questlog token cannot move to another workspace.");
   }
   resolve(token: string) {
     const binding = this.bindings[digest(token)];

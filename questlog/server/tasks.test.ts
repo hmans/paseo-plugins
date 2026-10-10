@@ -13,7 +13,7 @@ import { registerMcpInjection } from "./injection";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
-  const directory = await mkdtemp(join(tmpdir(), "flowtasks-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "questlog-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   return new TaskStore(directory);
 }
@@ -197,32 +197,32 @@ test("HTTP MCP lists tools, updates the bound workspace, reports conflicts, reje
   assert.equal((await fetch(service.url, { method: "POST", headers: { Authorization: `Bearer ${token}`, Origin: "https://example.com" } })).status, 403);
   const client = new Client({ name: "test", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(new URL(service.url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
-  assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ["flowtasks_get", "flowtasks_change", "flowtasks_batch"]);
-  const read = await client.callTool({ name: "flowtasks_get", arguments: {} });
+  assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ["questlog_get", "questlog_change", "questlog_batch"]);
+  const read = await client.callTool({ name: "questlog_get", arguments: {} });
   assert.deepEqual(read.structuredContent, { revision: 0, items: [] });
-  const change = await client.callTool({ name: "flowtasks_change", arguments: { expectedRevision: 0, action: { ...create("From MCP"), description: "MCP details" } } });
+  const change = await client.callTool({ name: "questlog_change", arguments: { expectedRevision: 0, action: { ...create("From MCP"), description: "MCP details" } } });
   assert.equal((change.structuredContent as Outline).items[0].text, "From MCP");
   assert.equal((change.structuredContent as Outline).items[0].description, "MCP details");
-  const conflict = await client.callTool({ name: "flowtasks_change", arguments: { expectedRevision: 0, action: create("Stale") } });
+  const conflict = await client.callTool({ name: "questlog_change", arguments: { expectedRevision: 0, action: create("Stale") } });
   assert.equal(conflict.isError, true);
-  const escape = await client.callTool({ name: "flowtasks_get", arguments: { workspaceId: "other" } });
+  const escape = await client.callTool({ name: "questlog_get", arguments: { workspaceId: "other" } });
   assert.equal(escape.isError, true);
   assert.equal((await store.read("other")).items.length, 0);
   let outline = await store.read("w");
   const parent = outline.items[0].id;
   outline = await store.change("w", outline.revision, create("Inherited child", parent));
-  const done = await client.callTool({ name: "flowtasks_change", arguments: {
+  const done = await client.callTool({ name: "questlog_change", arguments: {
     expectedRevision: outline.revision, action: { type: "update", id: parent, completed: true },
   } });
   assert.equal(done.isError, undefined);
   const closed = done.structuredContent as ReturnType<typeof taskView>;
   assert.equal(closed.items[1].completed, false);
   assert.equal(closed.items[1].effectiveCompleted, true);
-  const open = await client.callTool({ name: "flowtasks_get", arguments: { status: "open" } });
+  const open = await client.callTool({ name: "questlog_get", arguments: { status: "open" } });
   assert.deepEqual(open.structuredContent, { revision: closed.revision, items: [] });
-  const completed = await client.callTool({ name: "flowtasks_get", arguments: { status: "completed" } });
+  const completed = await client.callTool({ name: "questlog_get", arguments: { status: "completed" } });
   assert.equal((completed.structuredContent as Outline).items.length, 2);
-  const batch = await client.callTool({ name: "flowtasks_batch", arguments: { expectedRevision: closed.revision, actions: [
+  const batch = await client.callTool({ name: "questlog_batch", arguments: { expectedRevision: closed.revision, actions: [
     { type: "create", parentId: null, text: "Batch parent", tempId: "p" },
     { type: "create", parentId: { ref: "p" }, text: "Batch child", tempId: "c" },
   ] } });
@@ -230,7 +230,7 @@ test("HTTP MCP lists tools, updates the bound workspace, reports conflicts, reje
   const batched = batch.structuredContent as ReturnType<typeof taskView> & { createdIds: Record<string, string> };
   assert.equal(batched.revision, closed.revision + 1);
   assert.equal(batched.items.find(item => item.id === batched.createdIds.c)?.parentId, batched.createdIds.p);
-  const failedBatch = await client.callTool({ name: "flowtasks_batch", arguments: { expectedRevision: batched.revision, actions: [
+  const failedBatch = await client.callTool({ name: "questlog_batch", arguments: { expectedRevision: batched.revision, actions: [
     { type: "update", id: batched.createdIds.p, text: "Do not save" },
     { type: "delete", id: batched.createdIds.p, deleteChildren: false },
   ] } });
@@ -254,17 +254,17 @@ test("creation hooks preserve other MCPs and bind the new token before interacti
   const request = { config: { cwd: store.directory, systemPrompt: "Keep existing instructions.", mcpServers: { other: { type: "http", url: "http://example.test" } } }, env: { EXISTING: "yes" } };
   const created = await hooks.get("agent.create")!({ request });
   assert.ok(created.config.systemPrompt.startsWith(request.config.systemPrompt + "\n\n"));
-  assert.match(created.config.systemPrompt, /flowtasks_get/);
+  assert.match(created.config.systemPrompt, /questlog_get/);
   assert.equal(request.config.systemPrompt, "Keep existing instructions.");
   const withoutPrompt = await hooks.get("agent.create")!({ request: { config: { cwd: store.directory } } });
-  assert.ok(withoutPrompt.config.systemPrompt.startsWith("Flowtasks"));
+  assert.ok(withoutPrompt.config.systemPrompt.startsWith("Questlog"));
   const cloned = await hooks.get("agent.create")!({ request: created });
   assert.equal(cloned.config.systemPrompt, created.config.systemPrompt);
   assert.deepEqual(created.config.mcpServers.other, request.config.mcpServers.other);
-  const token = created.env.PASEO_FLOWTASKS_BOOTSTRAP_TOKEN;
+  const token = created.env.PASEO_QUESTLOG_BOOTSTRAP_TOKEN;
   assert.equal(service.bindings.resolve(token), null);
   const opened = await hooks.get("agent.session_open")!({ request: { purpose: "interactive", workspaceId: "w", agentId: "a", cwd: store.directory, env: created.env } });
   assert.equal(service.bindings.resolve(token), "w");
   assert.deepEqual(opened.env, { EXISTING: "yes" });
-  await assert.rejects(hooks.get("agent.create")!({ request: { ...request, config: { ...request.config, mcpServers: { flowtasks: { type: "http", url: "http://other.test" } } } } }), /unrelated MCP/);
+  await assert.rejects(hooks.get("agent.create")!({ request: { ...request, config: { ...request.config, mcpServers: { questlog: { type: "http", url: "http://other.test" } } } } }), /unrelated MCP/);
 });

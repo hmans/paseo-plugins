@@ -50,7 +50,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   const get = useRpc(getOutline);
   const change = useRpc(changeOutline);
   const cache = useQueryClient();
-  const queryKey = ["flowtasks", workspaceId];
+  const queryKey = ["questlog", workspaceId];
   const query = useQuery({ queryKey, queryFn: () => get({ workspaceId }), refetchInterval: 2000, retry: false });
   const latest = useRef<Outline>({ revision: 0, items: [] });
   const drafts = useRef(new Map<string, Draft>());
@@ -135,7 +135,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (mounted.current) setError(message);
-        else console.error("Flowtasks could not save pending edits:", message);
+        else console.error("Questlog could not save pending edits:", message);
       }
       finally { if (mounted.current) setSaving(false); }
     });
@@ -260,7 +260,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   const progress = items.length ? completed / items.length : 0;
   return <View style={{ flex: 1, width: "100%", maxWidth: 820, alignSelf: "center", backgroundColor: c.surface0 }}>
     <View style={{ paddingHorizontal: layout.compact ? 16 : 28, paddingTop: 16, paddingBottom: 12, gap: 4 }}>
-      <Text style={{ color: c.foreground, fontSize: 18, fontWeight: "600" }}>{name ?? "Flowtasks"}</Text>
+      <Text style={{ color: c.foreground, fontSize: 18, fontWeight: "600" }}>{name ?? "Questlog"}</Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
         <View accessibilityRole="progressbar" accessibilityLabel="Task completion"
           accessibilityValue={{ min: 0, max: Math.max(1, items.length), now: completed, text: `${completed} of ${items.length} completed` }}

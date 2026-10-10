@@ -12,7 +12,7 @@ function TaskCard({ item, theme, layout }: PluginTimelineItemProps<z.output<type
     borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1 }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       <Icon name="ListTodo" size={16} color={c.accent} />
-      <Text style={{ color: c.foregroundMuted, fontSize: 12, flex: 1 }}>Flowtasks · Work on task</Text>
+      <Text style={{ color: c.foregroundMuted, fontSize: 12, flex: 1 }}>Questlog · Work on task</Text>
       <Pressable accessibilityRole="button" accessibilityLabel={expanded ? "Hide task details" : "Show task details"}
         accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)}
         style={{ padding: 8, flexDirection: "row", alignItems: "center", gap: 4 }}>
