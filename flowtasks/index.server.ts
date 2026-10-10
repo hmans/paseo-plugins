@@ -5,6 +5,8 @@ import { getOutline, changeOutline } from "./shared/tasks";
 import { message, TaskStore } from "./server/store";
 import { startTaskMcp } from "./server/mcp";
 import { registerMcpInjection } from "./server/injection";
+import { workOnTask } from "./shared/work";
+import { taskDispatcher } from "./server/work";
 
 export default function contribute(server: PluginServerContext) {
   const directory = process.env.PASEO_FLOWTASKS_DATA_DIR ?? join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "flowtasks");
@@ -12,6 +14,7 @@ export default function contribute(server: PluginServerContext) {
   const mcp = startTaskMcp(store);
   void mcp.catch(error => console.error("Flowtasks MCP failed:", message(error)));
   registerMcpInjection(server, mcp);
+  server.handle(workOnTask, taskDispatcher(store, async () => (await mcp).bindings));
   async function requireWorkspace(workspaceId: string, { paseo }: PluginHandlerContext) {
     if (!await paseo.workspaces.ref(workspaceId).refresh()) throw new Error("Workspace is unavailable.");
   }

@@ -23,9 +23,14 @@ states:
       - label: Write a plan
         icon: ListTodo
         prompt: |
-          Write a concrete implementation plan for the current task.
+          Fill this workspace's Flowtasks outline with concrete implementation tasks
+          for the work discussed with the user.
+          Read the existing outline with flowtasks_get, then use flowtasks_change
+          to create or refine tasks and subtasks, including verification steps.
+          Build on existing tasks and avoid duplicates.
           Ask the user to resolve any blocking decisions.
-          Once the plan is agreed, transition the workspace to implementing.
+          Once the plan is agreed and recorded in Flowtasks, transition the workspace
+          to implementing.
     transitions: [implementing]
 
   implementing:

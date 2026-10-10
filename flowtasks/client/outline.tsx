@@ -7,6 +7,7 @@ import { changeOutline, children, getOutline, type Action, type Item, type Outli
 import { dropAction, structure } from "../shared/drag";
 import { useOutlineDrag } from "./drag";
 import { FoldRow, useReducedMotion } from "./fold";
+import { useWorkOnTask } from "./work";
 
 type Draft = { base: string; text: string };
 type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; preventDefault(): void };
@@ -15,7 +16,7 @@ export function OutlinePanel(props: PluginWorkspacePanelProps) {
   return <OutlineEditor key={props.workspaceId} {...props} />;
 }
 
-function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps) {
+function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspacePanelProps) {
   const c = theme.colors;
   const reducedMotion = useReducedMotion();
   const name = useWorkspace(workspaceId, workspace => workspace.name);
@@ -34,6 +35,8 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const work = useWorkOnTask(workspaceId);
+  const workPending = useRef(false);
   const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
   const mounted = useRef(true);
   useEffect(() => {
@@ -258,6 +261,21 @@ function OutlineEditor({ workspaceId, theme, layout }: PluginWorkspacePanelProps
           style={{ flex: 1, minWidth: 0, minHeight: 26, fontSize: 14, lineHeight: 20, paddingVertical: 3, paddingHorizontal: 0, borderWidth: 0, backgroundColor: "transparent", textAlignVertical: "top",
             ...(Platform.OS === "web" ? { outlineWidth: 0, fieldSizing: "content", resize: "none" } : { height: rowHeights[item.id] ?? 26 }),
             color: item.completed ? c.foregroundMuted : c.foreground, textDecorationLine: item.completed ? "line-through" : "none" }} />
+        <Pressable accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
+          accessibilityHint="Send this task and its subtasks to the most recently used agent in this workspace."
+          disabled={hidden || saving || work.isPending || !(drafts.current.get(item.id)?.text ?? item.text).trim()}
+          onPress={() => {
+            if (workPending.current) return;
+            workPending.current = true;
+            enqueue(async () => {
+              const agentId = await work.mutateAsync({ taskId: item.id, expectedRevision: latest.current.revision });
+              navigation?.openAgent({ agentId });
+            });
+            void queue.current.finally(() => { workPending.current = false; });
+          }}
+          style={{ padding: 8, opacity: work.isPending || saving || !(drafts.current.get(item.id)?.text ?? item.text).trim() ? 0.35 : 1 }}>
+          <Icon name="Play" size={14} color={c.accent} />
+        </Pressable>
       </View></FoldRow>)}
       {data && !items.length && <Pressable accessibilityRole="button" onPress={() => add()} style={{ padding: 12 }}>
         <Text style={{ color: c.foregroundMuted, fontSize: 15 }}>+ Start your first task</Text>

@@ -30,6 +30,9 @@ export class WorkspaceBindings {
     });
   }
   owns(token: string) { return Object.hasOwn(this.bindings, digest(token)); }
+  hasAgent(agentId: string, workspaceId: string) {
+    return Object.values(this.bindings).some(binding => binding.agentId === agentId && binding.workspaceId === workspaceId);
+  }
   async bind(token: string, agentId: string, workspaceId: string, cwd: string) {
     const canonical = await realpath(cwd);
     await this.store.exclusive("bindings", async () => {

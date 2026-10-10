@@ -32,6 +32,10 @@ Drag the checkbox circle beside a task to move it with its children. Clicking th
 
 ## Agent tools
 
+Use the play button beside a task to **Work on this now**. Flowtasks saves pending edits, sends the task with its ancestor context and subtasks to the most recently used agent in this workspace, and opens that agent. Completion stays unchanged until the work is verified.
+
+Paseo's public plugin API does not expose tab-focus history. Flowtasks selects the agent with the latest user-message timestamp; if no agent has received a message, it uses the newest agent. If that agent is busy or unavailable, the action reports an error instead of selecting another agent. The receiving agent must have the Flowtasks tools; agents created before plugin installation need to be replaced.
+
 The plugin injects an HTTP MCP server into newly created agents. `flowtasks_get` reads the outline; `flowtasks_change` creates, updates, moves, or deletes a task. Each change must include the revision returned by the last read. A conflict requires a fresh read and review before another attempt.
 
 The MCP endpoint listens on daemon loopback. Each agent receives a token bound to its workspace; tool inputs cannot select another workspace. Agents created before installation do not receive the tools.
