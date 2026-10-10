@@ -9,6 +9,7 @@ import { atomicWrite, isMissing, message, TaskStore } from "./store";
 import { WorkspaceBindings } from "./bindings";
 
 export function createTaskMcp(store: TaskStore, workspaceId: string) {
+  const writingGuidance = " The text field is a short task title, ideally a few words. Put extra information, context, requirements, and acceptance criteria in the optional description field. Do not pack those details into the title.";
   const mcp = new McpServer({ name: "flowtasks", version: "0.1.0" }, {
     instructions: "Flowtasks is a shared workspace task outline. Read it with flowtasks_get. Use flowtasks_change for one edit or flowtasks_batch for atomic edits to a whole plan, including new parent/child references. Read before changes and pass the current revision. On a conflict, read again and reassess; do not blindly retry. completed is the task's own saved flag; effectiveCompleted also includes completion inherited from ancestors or from all children being complete, recursively. A task with no children needs explicit or inherited completion. Use status open to list only effectively open tasks. Changing completion never changes other tasks' saved flags. Never edit the saved files directly.",
   });
@@ -25,12 +26,12 @@ export function createTaskMcp(store: TaskStore, workspaceId: string) {
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, input => result(() => store.read(workspaceId), input.status));
   mcp.registerTool("flowtasks_change", {
-    description: "Change the shared outline using expectedRevision from flowtasks_get. Create appends under parentId (null for root), or follows afterId. Update changes text or the selected task's own completion flag; descendants inherit completion without changing their saved flags. Move carries children: afterId null places it first. Delete requires deleteChildren true to remove a branch. Returns the new outline with effectiveCompleted values. Each successful change increments revision.",
+    description: "Change the shared outline using expectedRevision from flowtasks_get. Create appends under parentId (null for root), or follows afterId. Update changes text, description, or the selected task's own completion flag; descendants inherit completion without changing their saved flags. Move carries children: afterId null places it first. Delete requires deleteChildren true to remove a branch. Returns the new outline with effectiveCompleted values. Each successful change increments revision." + writingGuidance,
     inputSchema: changeSchema, outputSchema: taskViewSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, input => result(() => store.change(workspaceId, input.expectedRevision, input.action)));
   mcp.registerTool("flowtasks_batch", {
-    description: "Apply 1–100 ordered actions atomically with one expectedRevision check and one revision increment. Actions use flowtasks_change semantics. Creates may set tempId; later actions can use {ref: tempId} in id, parentId, or afterId. String references are existing task IDs. Forward references and duplicate tempIds are rejected. Every intermediate action must be valid, including the 5000-task limit. If any action fails, nothing is saved. Returns the full outline and createdIds mapping temporary IDs to saved IDs (including tasks deleted later in the batch). Read and reassess after a revision conflict; do not blindly retry.",
+    description: "Apply 1–100 ordered actions atomically with one expectedRevision check and one revision increment. Actions use flowtasks_change semantics. Creates may set tempId; later actions can use {ref: tempId} in id, parentId, or afterId. String references are existing task IDs. Forward references and duplicate tempIds are rejected. Every intermediate action must be valid, including the 5000-task limit. If any action fails, nothing is saved. Returns the full outline and createdIds mapping temporary IDs to saved IDs (including tasks deleted later in the batch). Read and reassess after a revision conflict; do not blindly retry." + writingGuidance,
     inputSchema: batchSchema, outputSchema: batchResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, input => result(() => store.batch(workspaceId, input.expectedRevision, input.actions)));

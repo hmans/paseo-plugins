@@ -24,7 +24,7 @@ export function outlineView(items: Item[], options: ViewOptions) {
   const search = options.search.trim().toLocaleLowerCase();
   const included = new Set<string>();
   for (const { item } of ordered) {
-    if (item.id !== options.editingId && ((options.hideCompleted && completed.has(item.id)) || (search && !item.text.toLocaleLowerCase().includes(search)))) continue;
+    if (item.id !== options.editingId && ((options.hideCompleted && completed.has(item.id)) || (search && !`${item.text}\n${item.description ?? ""}`.toLocaleLowerCase().includes(search)))) continue;
     let current: Item | undefined = item;
     while (current && seen.has(current.id) && !included.has(current.id)) {
       included.add(current.id);

@@ -9,9 +9,10 @@ import { useOutlineDrag } from "./drag";
 import { FoldRow, useReducedMotion } from "./fold";
 import { useWorkOnTask } from "./work";
 import { outlineView } from "../shared/view";
+import { descriptionBoundary } from "./caret";
 
-type Draft = { base: string; text: string };
-type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; preventDefault(): void };
+type Draft = { base: string; text: string; description?: { base: string; text: string } };
+type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; currentTarget?: unknown; preventDefault(): void };
 
 export function OutlinePanel(props: PluginWorkspacePanelProps) {
   return <View style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }}>
@@ -32,6 +33,9 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   const drafts = useRef(new Map<string, Draft>());
   const queue = useRef(Promise.resolve());
   const fields = useRef(new Map<string, TextInput>());
+  const descriptionFields = useRef(new Map<string, TextInput>());
+  const [descriptionId, setDescriptionId] = useState<string | null>(null);
+  const [focusDescriptionId, setFocusDescriptionId] = useState<string | null>(null);
   const [editVersion, redraw] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(new Set<string>());
@@ -84,10 +88,15 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       const saved = latest.current.items.find(item => item.id === id);
       if (!saved || (saved.text !== draft.base && saved.text !== draft.text)) throw new Error("This task changed elsewhere. Your text is kept here. Copy it before choosing Reload tasks.");
       const text = draft.text;
-      if (saved.text !== text) await apply({ type: "update", id, text });
+      const description = draft.description?.text;
+      if (draft.description && (saved.description ?? "") !== draft.description.base && (saved.description ?? "") !== description) throw new Error("This description changed elsewhere. Your edit is kept here. Copy it before choosing Reload tasks.");
+      if (saved.text !== text || (description !== undefined && (saved.description ?? "") !== description)) await apply({ type: "update", id, text, ...(description === undefined ? {} : { description }) });
       const current = drafts.current.get(id);
-      if (current?.text === text) drafts.current.delete(id);
-      else if (current) current.base = text;
+      if (current?.text === text && current.description?.text === description) drafts.current.delete(id);
+      else if (current) {
+        current.base = text;
+        if (current.description && description !== undefined) current.description.base = description;
+      }
     }
     if (mounted.current) redraw(value => value + 1);
   }
@@ -119,10 +128,22 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       setFocusId(null);
     }
   }, [focusId, data]);
+  useEffect(() => {
+    if (focusDescriptionId) {
+      descriptionFields.current.get(focusDescriptionId)?.focus();
+      setFocusDescriptionId(null);
+    }
+  }, [focusDescriptionId]);
 
   function edit(item: Item, text: string) {
     const existing = drafts.current.get(item.id);
-    drafts.current.set(item.id, { base: existing?.base ?? item.text, text });
+    drafts.current.set(item.id, { ...existing, base: existing?.base ?? item.text, text });
+    redraw(value => value + 1);
+  }
+  function editDescription(item: Item, text: string) {
+    const existing = drafts.current.get(item.id);
+    drafts.current.set(item.id, { base: existing?.base ?? item.text, text: existing?.text ?? item.text,
+      description: { base: existing?.description?.base ?? item.description ?? "", text } });
     redraw(value => value + 1);
   }
   function focus(id?: string) { if (id) setFocusId(id); }
@@ -176,7 +197,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
     const previousId = visible[visible.findIndex(entry => entry.item.id === id) - 1]?.item.id;
     enqueue(async () => {
       const item = latest.current.items.find(item => item.id === id);
-      if (!item || item.text || children(latest.current.items, id).length) return;
+      if (!item || item.text || item.description || children(latest.current.items, id).length) return;
       await apply({ type: "delete", id, deleteChildren: false });
       focus(previousId);
     });
@@ -187,6 +208,11 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
     if (key.key === "Escape" && drag.drag) { event.preventDefault(); drag.cancel(); return; }
     if (key.key === "Tab") { event.preventDefault(); indent(item.id, !!key.shiftKey); }
     else if (key.key === "Enter" && (key.ctrlKey || key.metaKey)) { event.preventDefault(); complete(item.id); }
+    else if (key.key === "Enter" && key.shiftKey) {
+      event.preventDefault();
+      setDescriptionId(item.id);
+      setFocusDescriptionId(item.id);
+    }
     else if (key.key === "Enter" && !key.shiftKey) { event.preventDefault(); add(item.id); }
     else if (key.key === "Backspace" && !(drafts.current.get(item.id)?.text ?? item.text)) { event.preventDefault(); removeEmpty(item.id); }
     else if (key.key === "ArrowUp" || key.key === "ArrowDown") {
@@ -195,6 +221,14 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       const index = visible.findIndex(entry => entry.item.id === item.id);
       focus(visible[index + (key.key === "ArrowUp" ? -1 : 1)]?.item.id);
     }
+  }
+  function descriptionKeyPress(event: KeyEvent, item: Item) {
+    const key = event.nativeEvent;
+    if (key.isComposing || key.shiftKey || key.ctrlKey || key.metaKey) return;
+    const up = key.key === "ArrowUp" && descriptionBoundary(event.currentTarget, "up");
+    const down = key.key === "ArrowDown" && descriptionBoundary(event.currentTarget, "down");
+    const next = up ? item.id : down ? visible[visible.findIndex(entry => entry.item.id === item.id) + 1]?.item.id : undefined;
+    if (next) { event.preventDefault(); focus(next); }
   }
   const muted = { color: c.foregroundMuted, fontSize: 12 };
   const effectiveCompleted = completedIds(items);
@@ -272,8 +306,9 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
           style={{ paddingVertical: 6, paddingRight: 8, ...(Platform.OS === "web" ? { cursor: "pointer" as const, touchAction: "none", userSelect: "none" as const } : {}) }}>
           <Icon name={item.completed ? "CircleCheck" : "Circle"} size={14} color={item.completed ? c.accent : c.foregroundMuted} />
         </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
         <TextInput ref={field => { if (field) fields.current.set(item.id, field); else fields.current.delete(item.id); }}
-          accessibilityLabel="Task" placeholder="Task" placeholderTextColor={c.foregroundMuted} editable={!hidden}
+          accessibilityLabel="Task title" placeholder="Task title" placeholderTextColor={c.foregroundMuted} editable={!hidden}
           multiline numberOfLines={1} scrollEnabled={false} value={drafts.current.get(item.id)?.text ?? item.text} onChangeText={text => edit(item, text)}
           onContentSizeChange={event => {
             if (Platform.OS === "web") return;
@@ -284,9 +319,29 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
           onKeyPress={event => { if (Platform.OS === "web") keyPress(event as KeyEvent, item); }}
           submitBehavior={Platform.OS === "web" ? "newline" : "submit"}
           onSubmitEditing={() => { if (Platform.OS !== "web") add(item.id); }}
-          style={{ flex: 1, minWidth: 0, minHeight: 26, fontSize: 14, lineHeight: 20, paddingVertical: 3, paddingHorizontal: 0, borderWidth: 0, backgroundColor: "transparent", textAlignVertical: "top",
+          style={{ minWidth: 0, minHeight: 26, fontSize: 14, lineHeight: 20, paddingVertical: 3, paddingHorizontal: 0, borderWidth: 0, backgroundColor: "transparent", textAlignVertical: "top",
             ...(Platform.OS === "web" ? { outlineWidth: 0, fieldSizing: "content", resize: "none" } : { height: rowHeights[item.id] ?? 26 }),
             color: effectiveCompleted.has(item.id) ? c.foregroundMuted : c.foreground, textDecorationLine: effectiveCompleted.has(item.id) ? "line-through" : "none" }} />
+        {(descriptionId === item.id || !!(drafts.current.get(item.id)?.description?.text ?? item.description)) && <TextInput
+          ref={field => { if (field) descriptionFields.current.set(item.id, field); else descriptionFields.current.delete(item.id); }}
+          accessibilityLabel={`Description for ${item.text || "task"}`}
+          editable={!hidden} multiline scrollEnabled={false}
+          value={drafts.current.get(item.id)?.description?.text ?? item.description ?? ""}
+          onChangeText={text => editDescription(item, text)}
+          onContentSizeChange={event => {
+            if (Platform.OS === "web") return;
+            const height = Math.max(22, Math.ceil(event.nativeEvent.contentSize.height));
+            const key = `description:${item.id}`;
+            setRowHeights(previous => previous[key] === height ? previous : { ...previous, [key]: height });
+          }}
+          onFocus={() => { setEditingId(item.id); setDescriptionId(item.id); }}
+          onBlur={() => { setEditingId(null); setDescriptionId(null); enqueue(); }}
+          onKeyPress={event => { if (Platform.OS === "web") descriptionKeyPress(event as KeyEvent, item); }}
+          style={{ minHeight: 22, fontSize: 12, lineHeight: 18, color: c.foregroundMuted, paddingVertical: 2, paddingHorizontal: 0,
+            textAlignVertical: "top", backgroundColor: "transparent", borderWidth: 0,
+            ...(Platform.OS === "web" ? { outlineWidth: 0, fieldSizing: "content", resize: "none" } : { height: rowHeights[`description:${item.id}`] ?? 22 }),
+            textDecorationLine: effectiveCompleted.has(item.id) ? "line-through" : "none" }} />}
+        </View>
         <Pressable accessibilityRole="button" accessibilityLabel={`Work on this now: ${item.text || "task"}`}
           accessibilityHint="Send this task and its subtasks to the most recently used agent in this workspace."
           accessibilityState={{ disabled: hidden || saving || work.isPending || !work.canWork || !(drafts.current.get(item.id)?.text ?? item.text).trim() }}

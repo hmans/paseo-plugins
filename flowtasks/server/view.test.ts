@@ -27,6 +27,11 @@ test("hide completed uses inherited completion and preserves unfinished siblings
   assert.ok(visible({ hideCompleted: true }, reopened).includes("inherited"));
 });
 
+test("search matches descriptions and keeps ancestor context", () => {
+  const described = items.map(item => item.id === "nested" ? { ...item, description: "Check keyboard accessibility" } : item);
+  assert.deepEqual(visible({ search: "KEYBOARD", collapsed: new Set(["root"]) }, described), ["root", "first", "nested"]);
+});
+
 test("editing keeps the current row visible until blur without changing the shared outline", () => {
   const before = JSON.stringify(items);
   assert.deepEqual(visible({ search: "missing", editingId: "nested" }), ["root", "first", "nested"]);

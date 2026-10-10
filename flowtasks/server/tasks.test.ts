@@ -19,6 +19,29 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
 }
 const create = (text: string, parentId: string | null = null) => ({ type: "create" as const, text, parentId });
 
+test("descriptions persist independently of titles through edits, batches and reloads", async t => {
+  const store = await fixture(t);
+  let state = await store.change("w", 0, create("Existing title"));
+  const id = state.items[0].id;
+  state = await store.change("w", state.revision, { type: "update", id, description: "Details\nMore details" });
+  state = await store.change("w", state.revision, { type: "update", id, text: "Short title" });
+  assert.equal(state.items[0].description, "Details\nMore details");
+  const batch = await store.batch("w", state.revision, [
+    { ...create("Child", id), tempId: "child", description: "Acceptance criteria" },
+    { type: "update", id: { ref: "child" }, description: "Revised criteria" },
+  ]);
+  assert.equal(batch.items[1].description, "Revised criteria");
+  assert.deepEqual(await new TaskStore(store.directory).read("w"), { revision: batch.revision, items: batch.items });
+  await assert.rejects(store.batch("w", batch.revision, [
+    { type: "update", id, description: "Must not save" },
+    { type: "update", id, description: "x".repeat(10001) },
+  ]));
+  assert.equal((await store.read("w")).items[0].description, "Details\nMore details");
+  state = await store.change("w", batch.revision, { type: "update", id, description: "" });
+  assert.equal(state.items[0].description, "");
+  assert.equal(state.items[0].text, "Short title");
+});
+
 test("nested moves preserve children and sibling order; cycles and invalid positions fail", async t => {
   const store = await fixture(t);
   let state = await store.change("w", 0, create("First"));
@@ -159,8 +182,9 @@ test("HTTP MCP lists tools, updates the bound workspace, reports conflicts, reje
   assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ["flowtasks_get", "flowtasks_change", "flowtasks_batch"]);
   const read = await client.callTool({ name: "flowtasks_get", arguments: {} });
   assert.deepEqual(read.structuredContent, { revision: 0, items: [] });
-  const change = await client.callTool({ name: "flowtasks_change", arguments: { expectedRevision: 0, action: create("From MCP") } });
+  const change = await client.callTool({ name: "flowtasks_change", arguments: { expectedRevision: 0, action: { ...create("From MCP"), description: "MCP details" } } });
   assert.equal((change.structuredContent as Outline).items[0].text, "From MCP");
+  assert.equal((change.structuredContent as Outline).items[0].description, "MCP details");
   const conflict = await client.callTool({ name: "flowtasks_change", arguments: { expectedRevision: 0, action: create("Stale") } });
   assert.equal(conflict.isError, true);
   const escape = await client.callTool({ name: "flowtasks_get", arguments: { workspaceId: "other" } });

@@ -2,9 +2,10 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
 const id = z.string().min(1).max(200);
-const text = z.string().max(10000);
+const text = z.string().max(10000).describe("Short task title. Aim for a few words; put context, requirements, and extra information in description.");
+const description = z.string().max(10000).describe("Supporting details, context, requirements, and acceptance criteria. Use an empty string to clear it.");
 export const itemSchema = z.object({
-  id, parentId: id.nullable(), text, completed: z.boolean(),
+  id, parentId: id.nullable(), text, description: description.optional(), completed: z.boolean(),
 }).strict();
 export type Item = z.infer<typeof itemSchema>;
 export const outlineSchema = z.object({
@@ -53,8 +54,8 @@ export function taskView(outline: Outline, status: "all" | "open" | "completed" 
 
 // Array order determines sibling order. Moving an item carries its whole subtree.
 export const actionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("create"), text, parentId: id.nullable(), afterId: id.optional() }).strict(),
-  z.object({ type: z.literal("update"), id, text: text.optional(), completed: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal("create"), text, description: description.optional(), parentId: id.nullable(), afterId: id.optional() }).strict(),
+  z.object({ type: z.literal("update"), id, text: text.optional(), description: description.optional(), completed: z.boolean().optional() }).strict(),
   z.object({ type: z.literal("move"), id, parentId: id.nullable(), afterId: id.nullable() }).strict(),
   z.object({ type: z.literal("delete"), id, deleteChildren: z.boolean() }).strict(),
 ]);

@@ -15,12 +15,14 @@ Requires Paseo 0.11.2 or later. Open **Flowtasks** from the workspace panel menu
 
 ## Edit tasks
 
-Click task text to edit it. Text saves after a short pause, on blur, and before structural changes.
+Each task has a title and an optional description. Keep titles short and put supporting details in the description, shown below the title in smaller, muted text. Click either field to edit it. Both save after a short pause, on blur, and before structural changes. Descriptions support multiple lines; the shortcuts below apply to titles.
+
+Empty descriptions stay hidden until you press Shift+Enter in the title. In a description, Up on the first line returns to its title; Down on the last line moves to the next visible task's title. Within the description, arrow keys move through the text normally. An empty description hides again when you leave it.
 
 | Desktop shortcut | Action |
 | --- | --- |
 | Enter | Add an empty sibling task |
-| Shift+Enter | Add a line break |
+| Shift+Enter | Open and focus the description |
 | Tab / Shift+Tab | Indent / outdent |
 | Up / Down | Focus the previous / next visible task |
 | Command+Enter / Ctrl+Enter | Toggle completion |
@@ -32,7 +34,7 @@ Drag the checkbox circle beside a task to move it with its children. Clicking th
 
 ## Filtering
 
-Use **Search tasks** to find text, with ancestor tasks retained for context. Search temporarily reveals matches inside collapsed branches; clearing it restores the collapse choices. **Hide completed** hides both explicitly and implicitly completed tasks and keeps unfinished tasks visible.
+Use **Search tasks** to search titles and descriptions, with ancestor tasks retained for context. Search temporarily reveals matches inside collapsed branches; clearing it restores the collapse choices. **Hide completed** hides both explicitly and implicitly completed tasks and keeps unfinished tasks visible.
 
 Use the search field's clear button to clear search, and the **Hide completed** switch to toggle the completion filter. Progress always covers the whole workspace. These settings are local to the open panel and reset when it closes; they do not change the shared outline or another agent's view.
 
@@ -56,7 +58,7 @@ Create actions can assign a `tempId`. Later actions can reference it with `{ "re
 {
   "expectedRevision": 12,
   "actions": [
-    { "type": "create", "tempId": "plan", "parentId": null, "text": "Build the feature" },
+    { "type": "create", "tempId": "plan", "parentId": null, "text": "Build the feature", "description": "Include implementation and verification tasks." },
     { "type": "create", "tempId": "implementation", "parentId": { "ref": "plan" }, "text": "Implement it" },
     { "type": "create", "parentId": { "ref": "plan" }, "afterId": { "ref": "implementation" }, "text": "Verify it" }
   ]
@@ -66,6 +68,8 @@ Create actions can assign a `tempId`. Later actions can reference it with `{ "re
 `flowtasks_get` accepts `status: "open"` to exclude both explicitly and implicitly completed tasks, or `status: "completed"` to return them. The default is `"all"`. MCP results include each task's saved `completed` flag and derived `effectiveCompleted` value. Completing or reopening a task never changes its descendants' saved flags.
 
 The MCP endpoint listens on daemon loopback. Each agent receives a token bound to its workspace; tool inputs cannot select another workspace. Agents created before installation do not receive the tools.
+
+The `text` field holds the short title for compatibility with existing tasks and agents. Use `description` for details in create or update actions, including batches. Omit it to preserve the existing description on update, or send an empty string to clear it. Existing tasks keep their full text as the title.
 
 ## Storage
 

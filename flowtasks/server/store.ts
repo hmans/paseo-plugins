@@ -26,13 +26,14 @@ export function applyAction(current: Outline, input: Action): Outline {
     if (action.afterId && requireItem(action.afterId).parentId !== action.parentId) throw new Error("The position must refer to a sibling.");
   }
   if (action.type === "create") {
-    const item = { id: randomUUID(), parentId: action.parentId, text: action.text, completed: false };
+    const item = { id: randomUUID(), parentId: action.parentId, text: action.text, ...(action.description === undefined ? {} : { description: action.description }), completed: false };
     const index = action.afterId ? items.findIndex(item => item.id === action.afterId) + 1 : items.length;
     items.splice(index, 0, item);
   } else {
     const item = requireItem(action.id);
     if (action.type === "update") {
       if (action.text !== undefined) item.text = action.text;
+      if (action.description !== undefined) item.description = action.description;
       if (action.completed !== undefined) item.completed = action.completed;
     } else if (action.type === "move") {
       if (action.afterId === item.id || action.parentId === item.id || (action.parentId && descendants(items, item.id).has(action.parentId))) throw new Error("An item cannot be moved into itself or its children.");
@@ -99,6 +100,7 @@ export class TaskStore {
           if (action.type === "create") {
             if (action.tempId && created.has(action.tempId)) throw new Error(`Duplicate temporary ID: ${action.tempId}.`);
             resolved = { type: "create", text: action.text, parentId: action.parentId === null ? null : resolve(action.parentId),
+              ...(action.description === undefined ? {} : { description: action.description }),
               ...(action.afterId === undefined ? {} : { afterId: resolve(action.afterId) }) };
           } else if (action.type === "move") {
             resolved = { type: "move", id: resolve(action.id), parentId: action.parentId === null ? null : resolve(action.parentId),
