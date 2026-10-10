@@ -128,3 +128,13 @@ export const transitionSchema = z.object({
   definitionVersion: text,
 }).strict();
 export type Transition = z.infer<typeof transitionSchema>;
+
+export const transitionWorkflow = defineRpc({
+  name: "workflow.transition",
+  input: transitionSchema.extend({ workspaceId: text, agentId: text }),
+  output: readySchema,
+});
+
+export const transitionRowSchema = z.object({
+  from: text, to: text, actor: z.enum(["user", "agent"]),
+});

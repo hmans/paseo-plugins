@@ -4,11 +4,13 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { readySchema, transitionSchema, type ReadyWorkflow } from "../shared/workflow";
+import { readySchema, transitionSchema, type ReadyWorkflow, type Transition } from "../shared/workflow";
 import { atomicWrite, errorMessage, isMissing, requireReady, WorkflowStore } from "./store";
 import { WorkspaceBindings, type BoundWorkspace } from "./bindings";
 
-function createWorkflowMcp(store: WorkflowStore, scope: BoundWorkspace) {
+type OnTransition = (scope: BoundWorkspace, input: Transition, snapshot: ReadyWorkflow) => Promise<void>;
+
+function createWorkflowMcp(store: WorkflowStore, scope: BoundWorkspace, onTransition?: OnTransition) {
   const mcp = new McpServer({ name: "flowstate", version: "0.1.0" }, {
     instructions: "This workspace has a project workflow. Use workflow_get_state to read its state and available transitions. Use workflow_transition when the task's criteria are met. State is shared by all agents in this workspace. Do not edit saved state files.",
   });
@@ -33,11 +35,15 @@ function createWorkflowMcp(store: WorkflowStore, scope: BoundWorkspace) {
     inputSchema: transitionSchema,
     outputSchema: readySchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, input => result(() => store.transition(scope.workspaceId, scope.cwd, input)));
+  }, input => result(async () => {
+    const snapshot = await store.transition(scope.workspaceId, scope.cwd, input);
+    await onTransition?.(scope, input, snapshot);
+    return snapshot;
+  }));
   return mcp;
 }
 
-export async function startWorkflowMcp(store: WorkflowStore) {
+export async function startWorkflowMcp(store: WorkflowStore, onTransition?: OnTransition) {
   await mkdir(store.directory, { recursive: true, mode: 0o700 });
   const bindings = await WorkspaceBindings.load(store);
   const portPath = join(store.directory, "mcp-port.json");
@@ -56,7 +62,7 @@ export async function startWorkflowMcp(store: WorkflowStore) {
     if (!scope) { fail(403, "Workflow MCP is not bound to this agent's workspace."); return; }
     if (request.method !== "POST") { response.setHeader("Allow", "POST"); fail(405, "Use stateless MCP POST requests."); return; }
 
-    const mcp = createWorkflowMcp(store, scope);
+    const mcp = createWorkflowMcp(store, scope, onTransition);
     active.add(mcp);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     response.once("close", () => {

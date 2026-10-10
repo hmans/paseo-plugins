@@ -27,7 +27,7 @@ Plugins must be enabled on the target daemon. This plugin's installation ID is `
 3. Select an action pill to send its prompt or run its operation directly. Actions are disabled while that agent is running or initializing, or while an action is being dispatched. The state pill opens action descriptions, condition explanations, and command trust controls.
 4. The agent receives exactly the configured prompt. Its injected MCP tools let it read and change the workspace state.
 
-Use `/workflow` or **Open Flowstate** in the Command Center to open the actions in an agent panel.
+Click the current state pill to open compact action buttons, condition explanations, command trust controls, and **Change state** buttons for the allowed next states. Hover over an action button on desktop or web to read its full prompt or operation description. The same text is available as an accessibility hint. State changes do not send a prompt and remain available while the agent is running. There is no separate agent panel or slash command. Command Center actions are deferred until Paseo can filter them by the focused workspace and agent.
 
 Agents created before MCP injection was installed need to be replaced with a new agent. The same applies if the workflow file was added after the agent was created. Paseo's current plugin API can inject MCP configuration on creation, but cannot add it to an existing agent. The UI explains this and disables its prompt actions. Creating a new agent in the same workspace preserves the workflow state.
 
@@ -141,6 +141,10 @@ Checks run on demand when the UI reads the workflow and when an action is dispat
 ## State and transitions
 
 All agents in a workspace share one state. Different workspace IDs have separate state, even when they use the same directory. The first read saves the initial state. Clicking a prompt does not change it.
+
+Users can select an allowed next state from the current state pill's popover without MCP tools. User and agent transitions use the same saved-state and revision checks. A concurrent change rejects a stale transition and requires a refresh.
+
+Successful transitions add a Flowstate entry to the initiating agent's timeline showing the previous state, next state, and whether the user or agent made the change. These entries are display feedback, not the saved state or a durable audit log. Timeline publication is best effort; a publication error is logged without undoing the state change. After a plugin reload, an agent transition may wait for the next lifecycle callback or workflow read to obtain Paseo's connection before publishing its entry.
 
 The injected MCP server exposes two tools:
 

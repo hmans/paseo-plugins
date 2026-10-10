@@ -143,7 +143,8 @@ test("does not silently reset removed states or corrupt saved data", async t => 
 
 test("MCP discovers tools, scopes calls, rejects stale transitions, and reconnects after reload", async t => {
   const { cwd, store } = await setup(t);
-  let service = await startWorkflowMcp(store);
+  const transitions: string[] = [];
+  let service = await startWorkflowMcp(store, async (scope, _input, snapshot) => { transitions.push(`${scope.agentId}:${snapshot.state}`); });
   const client = new Client({ name: "workflow-test", version: "1.0.0" });
   try {
     const token = await service.bindings.issue(cwd);
@@ -163,6 +164,7 @@ test("MCP discovers tools, scopes calls, rejects stale transitions, and reconnec
     const next = readySchema.parse((await client.callTool({ name: "workflow_transition", arguments: expected(initial, "implementing") })).structuredContent);
     assert.equal(next.state, "implementing");
     assert.equal((await client.callTool({ name: "workflow_transition", arguments: expected(initial, "implementing") })).isError, true);
+    assert.deepEqual(transitions, ["agent-one:implementing"]);
     assert.equal(requireReady(await store.inspect("two", cwd)).state, "planning");
     assert.equal((await fetch(service.url, { method: "POST", body: "{}" })).status, 403);
     assert.equal((await fetch(service.url, { method: "POST", headers: { Origin: "https://example.com", Authorization: `Bearer ${token}` }, body: "{}" })).status, 403);
@@ -211,6 +213,78 @@ test("injection preserves configuration, binds actual workspace IDs, and support
   } finally { await service.close(); }
 });
 
+test("manual transitions validate state and ownership and publish only committed changes", async t => {
+  const { cwd, store } = await setup(t);
+  const previous = process.env.PASEO_FLOWSTATE_DATA_DIR;
+  process.env.PASEO_FLOWSTATE_DATA_DIR = store.directory;
+  const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
+  const hooks = new Map<string, (input: any, context: any) => Promise<any>>();
+  const cleanup = contribute({
+    handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler),
+    before: (name: string, handler: any) => { hooks.set(name, handler); return () => {}; }, on: () => () => {},
+  } as unknown as PluginServerContext);
+  let workspaceId = "one";
+  let failPublication = false;
+  const rows: any[] = [];
+  const context = { paseo: {
+    workspaces: { ref: () => ({ refresh: async () => ({ workspaceDirectory: cwd }) }) },
+    agents: { ref: (id: string) => ({
+      refresh: async () => ({ agent: { workspaceId, status: "running" } }),
+      timeline: { append: async (row: any) => {
+        if (failPublication) throw new Error("Timeline unavailable");
+        rows.push({ id, row });
+      } },
+    }) },
+  } };
+  try {
+    const initial = requireReady(await store.inspect("one", cwd));
+    const input = { workspaceId: "one", agentId: "selected", ...expected(initial, "implementing") };
+    const transition = handlers.get("workflow.transition")!;
+    workspaceId = "other";
+    await assert.rejects(transition(input, context), /not in this workspace/);
+    workspaceId = "one";
+    await assert.rejects(transition({ ...input, target: "unknown" }, context), /not allowed/);
+    assert.equal(rows.length, 0);
+    const next = await transition(input, context);
+    assert.equal(next.state, "implementing");
+    assert.equal(rows[0].id, "selected");
+    assert.equal(rows[0].row.id, `transition-${next.revision}`);
+    assert.deepEqual(rows[0].row.data, { from: "planning", to: "implementing", actor: "user" });
+    await assert.rejects(transition(input, context), /workflow changed/);
+    assert.equal(rows.length, 1);
+    failPublication = true;
+    const originalError = console.error;
+    const errors: unknown[] = [];
+    console.error = (...args) => { errors.push(args); };
+    try {
+      const restored = await transition({ ...input, ...expected(next, "planning") }, context);
+      assert.equal(restored.state, "planning");
+      assert.equal(errors.length, 1);
+    } finally { console.error = originalError; }
+    assert.equal(requireReady(await store.inspect("one", cwd)).state, "planning");
+    failPublication = false;
+    const injected = await hooks.get("agent.create")!({ request: { config: { provider: "codex", cwd } } }, context);
+    await hooks.get("agent.session_open")!({ request: {
+      agentId: "selected", workspaceId: "one", cwd, purpose: "interactive", env: injected.env,
+    } }, context);
+    const client = new Client({ name: "timeline-test", version: "1.0.0" });
+    try {
+      const config = injected.config.mcpServers[MCP_NAME];
+      await client.connect(new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.headers } }));
+      const current = requireReady(await store.inspect("one", cwd));
+      const response = await client.callTool({ name: "workflow_transition", arguments: expected(current, "implementing") });
+      assert.notEqual(response.isError, true);
+      assert.equal(rows.length, 2);
+      assert.equal(rows[1].row.data.actor, "agent");
+      assert.equal(rows[1].id, "selected");
+    } finally { await client.close(); }
+  } finally {
+    await cleanup();
+    if (previous === undefined) delete process.env.PASEO_FLOWSTATE_DATA_DIR;
+    else process.env.PASEO_FLOWSTATE_DATA_DIR = previous;
+  }
+});
+
 test("action RPC sends only to the selected agent and rejects busy or stale requests", async t => {
   const { cwd, store, file } = await setup(t);
   const previous = process.env.PASEO_FLOWSTATE_DATA_DIR;
@@ -218,6 +292,7 @@ test("action RPC sends only to the selected agent and rejects busy or stale requ
   const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
   const hooks = new Map<string, (input: any) => Promise<any>>();
   const cleanup = contribute({
+    on: () => () => {},
     handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler),
     before: (name: string, handler: any) => { hooks.set(name, handler); return () => {}; },
   } as unknown as PluginServerContext);
@@ -284,6 +359,7 @@ test("archive actions use the selected workspace without MCP and retain dispatch
   process.env.PASEO_FLOWSTATE_DATA_DIR = store.directory;
   const handlers = new Map<string, (input: any, context: any) => Promise<any>>();
   const cleanup = contribute({
+    on: () => () => {},
     handle: (contract: { name: string }, handler: any) => handlers.set(contract.name, handler),
     before: () => () => {},
   } as unknown as PluginServerContext);

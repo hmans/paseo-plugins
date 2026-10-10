@@ -1,4 +1,4 @@
-import type { PluginServerContext } from "@getpaseo/plugin/server";
+import type { PluginServerContext, PluginHookContext } from "@getpaseo/plugin/server";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { isMissing } from "./store";
@@ -7,8 +7,9 @@ import type { startWorkflowMcp } from "./mcp";
 export const MCP_NAME = "flowstate";
 export const TOKEN_ENV = "PASEO_FLOWSTATE_BOOTSTRAP_TOKEN";
 
-export function registerMcpInjection(server: PluginServerContext, ready: ReturnType<typeof startWorkflowMcp>) {
-  server.before("agent.create", async ({ request }) => {
+export function registerMcpInjection(server: PluginServerContext, ready: ReturnType<typeof startWorkflowMcp>, observeContext?: (context: PluginHookContext) => void) {
+  server.before("agent.create", async ({ request }, context) => {
+    observeContext?.(context);
     try { await access(join(request.config.cwd, ".paseo", "flowstate.yml")); }
     catch (error) { if (isMissing(error)) return; throw error; }
     const mcp = await ready;
@@ -30,7 +31,8 @@ export function registerMcpInjection(server: PluginServerContext, ready: ReturnT
     };
   });
 
-  server.before("agent.session_open", async ({ request }) => {
+  server.before("agent.session_open", async ({ request }, context) => {
+    observeContext?.(context);
     if (request.purpose !== "interactive" || !request.workspaceId) return;
     const token = request.env[TOKEN_ENV];
     // A plugin startup failure must not prevent unrelated agents from opening.

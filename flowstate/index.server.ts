@@ -1,7 +1,8 @@
 import type { PluginServerContext, PluginHandlerContext } from "@getpaseo/plugin/server";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getWorkflow, runAction, setCommandTrust, workflowActions } from "./shared/workflow";
+import { getWorkflow, runAction, setCommandTrust, transitionWorkflow, workflowActions, type Transition, type ReadyWorkflow } from "./shared/workflow";
+import { publishTransition } from "./server/timeline";
 import { Conditions } from "./server/conditions";
 import { assertCurrent, errorMessage, requireReady, WorkflowStore } from "./server/store";
 import { startWorkflowMcp } from "./server/mcp";
@@ -12,9 +13,20 @@ export default function contribute(server: PluginServerContext) {
   const directory = process.env.PASEO_FLOWSTATE_DATA_DIR ?? join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "flowstate");
   const store = new WorkflowStore(directory);
   const conditions = new Conditions(directory);
-  const mcp = startWorkflowMcp(store);
+  let paseo: PluginHandlerContext["paseo"] | undefined;
+  const pendingRows: { agentId: string; input: Transition; snapshot: ReadyWorkflow }[] = [];
+  function observeContext(context: PluginHandlerContext) {
+    if (!context) return;
+    paseo = context.paseo;
+    for (const row of pendingRows.splice(0)) void publishTransition(paseo, row.agentId, row.input, row.snapshot, "agent");
+  }
+  const mcp = startWorkflowMcp(store, async (scope, input, snapshot) => {
+    if (paseo) await publishTransition(paseo, scope.agentId, input, snapshot, "agent");
+    else pendingRows.push({ agentId: scope.agentId, input, snapshot });
+  });
   void mcp.catch(error => console.error("Workflow MCP failed:", errorMessage(error)));
-  registerMcpInjection(server, mcp);
+  registerMcpInjection(server, mcp, observeContext);
+  server.on("agent.turn_started", (_event, context) => { observeContext(context); });
 
   async function workspaceDirectory(workspaceId: string, { paseo }: PluginHandlerContext) {
     const workspace = await paseo.workspaces.ref(workspaceId).refresh();
@@ -31,6 +43,7 @@ export default function contribute(server: PluginServerContext) {
   }
 
   server.handle(getWorkflow, async ({ workspaceId, agentId }, context) => {
+    observeContext(context);
     try {
       const cwd = await workspaceDirectory(workspaceId, context);
       const service = await mcp.catch(() => null);
@@ -39,6 +52,16 @@ export default function contribute(server: PluginServerContext) {
         ? { ...snapshot, ...await conditions.results(snapshot, cwd, false, undefined, readPullRequestMerged(workspaceId, context)), toolsReady: agentId ? service?.bindings.hasAgent(agentId, workspaceId) ?? false : undefined }
         : snapshot;
     } catch (error) { return { status: "error" as const, message: errorMessage(error) }; }
+  });
+
+  server.handle(transitionWorkflow, async (input, context) => {
+    observeContext(context);
+    const current = await context.paseo.agents.ref(input.agentId).refresh();
+    if (!current || current.agent.workspaceId !== input.workspaceId) throw new Error("The selected agent is not in this workspace.");
+    const cwd = await workspaceDirectory(input.workspaceId, context);
+    const snapshot = await store.transition(input.workspaceId, cwd, input);
+    await publishTransition(context.paseo, input.agentId, input, snapshot, "user");
+    return snapshot;
   });
 
   server.handle(setCommandTrust, async (input, context) => {

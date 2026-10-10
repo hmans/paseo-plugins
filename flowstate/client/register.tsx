@@ -1,5 +1,7 @@
 import type { PluginButtonIconProps, PluginButtonRegistration, PluginClientContext } from "@getpaseo/plugin/client";
-import { WorkflowIcon, WorkflowPanel, WorkflowPopover } from "./workflow";
+import { WorkflowIcon, WorkflowPopover } from "./workflow";
+import { TransitionRow } from "./timeline";
+import { transitionRowSchema } from "../shared/workflow";
 import { createActionPills } from "./action-pills";
 
 export function registerWorkflow(client: PluginClientContext) {
@@ -27,9 +29,7 @@ export function registerWorkflow(client: PluginClientContext) {
     pills.set(agent.id, { workspaceId, remove() { actions.dispose(); registration?.remove(); } });
   }
 
-  client.addWorkspacePanel({ id: "workflow", title: "Flowstate", icon: "GitBranch", context: "agent", Component: WorkflowPanel });
-  client.addCommandCenterItem({ id: "open-workflow", title: "Open Flowstate", icon: "GitBranch", context: "agent", onSelect: ({ openPanel }) => openPanel("workflow") });
-  client.addSlashCommand({ name: "workflow", description: "Open this workspace's workflow actions", argumentHint: "", context: "agent", onSubmit: ({ openPanel }) => openPanel("workflow") });
+  client.addTimelineRenderer({ kind: "flowstate-transition", version: 1, schema: transitionRowSchema, Component: TransitionRow });
 
   void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {
     if (lifetime.signal.aborted) return;

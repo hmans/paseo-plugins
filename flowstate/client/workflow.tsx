@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAgent, useRpc, type PluginAgentPanelProps, type PluginButtonContentProps, type PluginButtonIconProps, type PluginButton } from "@getpaseo/plugin/client";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { actionDescription, defaultActionIcon, getWorkflow, runAction, setCommandTrust, workflowActions } from "../shared/workflow";
+import { useAgent, useRpc, type PluginButtonContentProps, type PluginButtonIconProps, type PluginButton } from "@getpaseo/plugin/client";
+import { Icon } from "@getpaseo/plugin/client/react-native";
+import { actionDescription, defaultActionIcon, getWorkflow, runAction, setCommandTrust, transitionWorkflow, workflowActions } from "../shared/workflow";
+import { hoverTitle } from "./web";
 import { actionButtons } from "./action-pills";
 
 function actionIcon(name: string) {
@@ -55,7 +56,7 @@ export function WorkflowIcon(props: PluginButtonIconProps & { agentId: string; o
   return <Icon name={icon} size={props.size} color={props.theme.colors.accent} />;
 }
 
-type ActionsProps = Pick<PluginAgentPanelProps, "workspaceId" | "agentId" | "theme" | "layout"> & { onSent?(): void };
+type ActionsProps = Pick<Extract<PluginButtonContentProps, { context: "agent" }>, "workspaceId" | "agentId" | "theme" | "layout"> & { onSent?(): void };
 
 function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: ActionsProps) {
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
@@ -63,8 +64,16 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
   const queryClient = useQueryClient();
   const run = useRpc(runAction);
   const saveTrust = useRpc(setCommandTrust);
+  const changeState = useRpc(transitionWorkflow);
   const agent = useAgent(agentId, agent => ({ status: agent.status }));
   const snapshot = query.data;
+  const transition = useMutation({
+    mutationFn: (target: string) => {
+      if (snapshot?.status !== "ready") throw new Error("Workflow is not ready.");
+      return changeState({ workspaceId, agentId, target, expectedState: snapshot.state, expectedRevision: snapshot.revision, definitionVersion: snapshot.definitionVersion });
+    },
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workflow", workspaceId] }); },
+  });
   const trust = useMutation({
     mutationFn: (trusted: boolean) => {
       if (snapshot?.status !== "ready") throw new Error("Workflow is not ready.");
@@ -100,7 +109,7 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
   const state = snapshot.workflow.states[snapshot.state];
   const actions = workflowActions(snapshot.workflow, snapshot.state);
   const needsNewAgent = snapshot.toolsReady === false && actions.some(action => "prompt" in action);
-  const disabled = busy || send.isPending;
+  const disabled = busy || send.isPending || transition.isPending;
   return <View style={{ gap: layout.compact ? 14 : 18 }}>
     <View style={{ gap: 5 }}>
       <Text style={{ color: colors.foreground, fontSize: 22, fontWeight: "600" }}>{state.label ?? snapshot.state}</Text>
@@ -121,15 +130,17 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
         const actionDisabled = disabled || ("prompt" in action && needsNewAgent) || (!!action.when && condition?.value !== "true");
         return <Pressable
         key={action.label}
+        ref={hoverTitle(actionDescription(action))}
         accessibilityRole="button"
         accessibilityLabel={action.label}
+        accessibilityHint={actionDescription(action)}
         accessibilityState={{ disabled: actionDisabled, busy: send.isPending && send.variables === action.label }}
         disabled={actionDisabled}
         onHoverIn={() => setHoveredAction(action.label)}
         onHoverOut={() => setHoveredAction(null)}
         onPress={() => send.mutate(action.label)}
         style={({ pressed }) => ({
-          padding: layout.compact ? 12 : 14, gap: 6, borderRadius: 8,
+          paddingHorizontal: 12, paddingVertical: 10, gap: 6, borderRadius: 8,
           borderWidth: 1, borderColor: !actionDisabled && (pressed || hoveredAction === action.label) ? colors.accent : colors.border,
           backgroundColor: !actionDisabled && (pressed || hoveredAction === action.label) ? colors.surface2 : colors.surface1,
           opacity: actionDisabled ? 0.55 : 1,
@@ -139,7 +150,6 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
           <Icon name={action.icon ?? defaultActionIcon(action)} size={15} color={colors.accent} />
           <Text style={{ ...text, flex: 1, fontWeight: "600" }}>{send.isPending && send.variables === action.label ? "Running…" : action.label}</Text>
         </View>
-        <Text numberOfLines={3} style={muted}>{actionDescription(action)}</Text>
         {action.when && condition?.value !== "true" && <Text style={{ ...muted, color: colors.statusWarning }}>{condition?.message ?? "Checking condition…"}</Text>}
       </Pressable>; })}
       {actions.length === 0 ? <Text style={muted}>No actions configured for this state.</Text>
@@ -147,23 +157,27 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
     </View>
     {busy && <Text style={muted}>Wait for this agent to finish before running an action.</Text>}
     {send.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{send.error.message}</Text>}
+    {transition.isError && <Text accessibilityRole="alert" style={{ ...text, color: colors.statusDanger }}>{transition.error.message}</Text>}
     {send.isSuccess && <Text style={{ ...text, color: colors.statusSuccess }}>{"sent" in send.data ? "Prompt sent to this agent." : "Workspace archive requested."}</Text>}
     <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: layout.compact ? 12 : 16, gap: 10 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
         <Icon name="ArrowRight" size={14} color={colors.foregroundMuted} />
-        <Text style={{ ...muted, fontWeight: "500" }}>{state.transitions.length ? "Next states" : "No next states"}</Text>
+        <Text style={{ ...muted, fontWeight: "500" }}>{state.transitions.length ? "Change state" : "No next states"}</Text>
       </View>
       {state.transitions.length > 0 && <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {state.transitions.map(id => {
           const next = snapshot.workflow.states[id];
-          return <View key={id} style={{
+          return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`Transition to ${next.label ?? id}`}
+            disabled={transition.isPending || send.isPending}
+            accessibilityState={{ disabled: transition.isPending || send.isPending }}
+            onPress={() => transition.mutate(id)} style={{
             flexDirection: "row", alignItems: "center", gap: 7,
             paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
             backgroundColor: colors.surface2, maxWidth: "100%",
           }}>
             <Icon name={next.icon ?? "GitBranch"} size={14} color={colors.accent} />
             <Text style={{ ...text, fontSize: 13, fontWeight: "500", flexShrink: 1 }}>{next.label ?? id}</Text>
-          </View>;
+          </Pressable>;
         })}
       </View>}
     </View>
@@ -173,12 +187,4 @@ function WorkflowActions({ workspaceId, agentId, theme, layout, onSent }: Action
 export function WorkflowPopover(props: PluginButtonContentProps) {
   if (props.context !== "agent") return null;
   return <WorkflowActions {...props} onSent={props.close} />;
-}
-
-export function WorkflowPanel(props: PluginAgentPanelProps) {
-  return <ScrollView style={{ flex: 1, backgroundColor: props.theme.colors.surface0 }} contentContainerStyle={{ padding: props.layout.compact ? 16 : 24 }}>
-    <View style={{ width: "100%", maxWidth: 620, alignSelf: "center" }}>
-      <WorkflowActions {...props} />
-    </View>
-  </ScrollView>;
 }
