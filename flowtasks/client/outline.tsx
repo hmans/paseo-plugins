@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Platform, Pressable, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, Switch, Text, TextInput, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRpc, useWorkspace, type PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
@@ -8,6 +8,7 @@ import { dropAction, structure } from "../shared/drag";
 import { useOutlineDrag } from "./drag";
 import { FoldRow, useReducedMotion } from "./fold";
 import { useWorkOnTask } from "./work";
+import { outlineView } from "../shared/view";
 
 type Draft = { base: string; text: string };
 type KeyEvent = { nativeEvent: { key: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; isComposing?: boolean }; preventDefault(): void };
@@ -34,6 +35,9 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   const [editVersion, redraw] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(new Set<string>());
+  const [search, setSearch] = useState("");
+  const [hideCompleted, setHideCompleted] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const work = useWorkOnTask(workspaceId);
@@ -51,8 +55,10 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
   if (query.data && query.data.revision >= latest.current.revision) latest.current = query.data;
   const data = query.data;
   const items = data?.items ?? [];
+  const { groups, rendered, visible } = outlineView(items, { search, hideCompleted, collapsed, editingId });
+  const filtering = !!search.trim() || hideCompleted;
   const drag = useOutlineDrag(items, ({ sourceId, target, items: original }) => {
-    if (!target) return;
+    if (!target || filtering) return;
     enqueue(async () => {
       if (structure(original) !== structure(latest.current.items)) throw new Error("The task order changed while dragging. Try the move again.");
       const action = dropAction(latest.current.items, sourceId, target);
@@ -62,6 +68,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       focus(sourceId);
     });
   });
+  useEffect(() => { drag.cancel(); }, [search, hideCompleted]);
 
   function accept(outline: Outline) {
     latest.current = outline;
@@ -125,10 +132,25 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       if (id && !anchor) throw new Error("This task was deleted. Reload tasks.");
       const previous = new Set(latest.current.items.map(item => item.id));
       const result = await apply({ type: "create", text: "", parentId: anchor?.parentId ?? null, ...(anchor ? { afterId: anchor.id } : {}) });
-      focus(result.items.find(item => !previous.has(item.id))?.id);
+      setSearch("");
+      setHideCompleted(false);
+      const created = result.items.find(item => !previous.has(item.id));
+      setCollapsed(value => {
+        const next = new Set(value);
+        let parentId = created?.parentId;
+        const seen = new Set<string>();
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId);
+          next.delete(parentId);
+          parentId = result.items.find(item => item.id === parentId)?.parentId;
+        }
+        return next;
+      });
+      focus(created?.id);
     });
   }
   function indent(id: string, outdent = false) {
+    if (filtering) return;
     enqueue(async () => {
       const all = latest.current.items;
       const item = all.find(item => item.id === id);
@@ -149,21 +171,6 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       const item = latest.current.items.find(item => item.id === id);
       if (item) await apply({ type: "update", id, completed: !item.completed });
     });
-  }
-  const visible: { item: Item; depth: number }[] = [];
-  const rendered: { item: Item; depth: number; hidden: boolean }[] = [];
-  const groups = new Map<string | null, Item[]>();
-  for (const item of items) {
-    const group = groups.get(item.parentId) ?? [];
-    group.push(item);
-    groups.set(item.parentId, group);
-  }
-  const pending = (groups.get(null) ?? []).map(item => ({ item, depth: 0, hidden: false })).reverse();
-  while (pending.length) {
-    const entry = pending.pop()!;
-    rendered.push(entry);
-    if (!entry.hidden) visible.push(entry);
-    pending.push(...(groups.get(entry.item.id) ?? []).map(item => ({ item, depth: entry.depth + 1, hidden: entry.hidden || collapsed.has(entry.item.id) })).reverse());
   }
   function removeEmpty(id: string) {
     const previousId = visible[visible.findIndex(entry => entry.item.id === id) - 1]?.item.id;
@@ -208,6 +215,23 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
         {saving && <Text style={muted}>Saving…</Text>}
       </View>
       {!layout.compact && <Text style={muted}>Enter to add · Tab to indent · Shift+Tab to outdent · ⌘/Ctrl+Enter to complete</Text>}
+      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", flexGrow: 1, flexBasis: 160, minWidth: 0,
+          backgroundColor: c.surface1, borderRadius: 6, paddingLeft: 10 }}>
+          <Icon name="Search" size={14} color={c.foregroundMuted} />
+          <TextInput accessibilityLabel="Search tasks" placeholder="Search tasks…" placeholderTextColor={c.foregroundMuted}
+            value={search} onChangeText={setSearch} style={{ flex: 1, minWidth: 0, padding: 8, color: c.foreground, fontSize: 13 }} />
+          {!!search && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearch("")} style={{ padding: 10 }}>
+            <Icon name="X" size={14} color={c.foregroundMuted} />
+          </Pressable>}
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4, paddingVertical: 6 }}>
+          <Text style={muted}>Hide completed</Text>
+          <Switch accessibilityLabel="Hide completed" value={hideCompleted} onValueChange={setHideCompleted}
+            trackColor={{ false: c.surface2, true: c.accent }} thumbColor={c.foreground} ios_backgroundColor={c.surface2} />
+        </View>
+      </View>
+      {filtering && <Text style={muted}>Clear filters to reorder tasks. Progress includes all workspace tasks.</Text>}
     </View>
     {(error || query.isError) && <View accessibilityRole="alert" style={{ padding: 16, gap: 8 }}>
       <Text selectable style={{ color: c.foreground }}>{error ?? query.error?.message}</Text>
@@ -225,17 +249,17 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
         style={{ marginLeft: Math.min(depth, layout.compact ? 5 : 12) * 20, flexDirection: "row", alignItems: "flex-start",
           opacity: drag.drag?.sourceId === item.id ? 0.4 : 1,
           backgroundColor: drag.drag?.target?.id === item.id && drag.drag.target.position === "inside" ? c.surface2 : "transparent" }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${collapsed.has(item.id) ? "Expand" : "Collapse"} task`} disabled={!groups.has(item.id)}
+        <Pressable accessibilityRole="button" accessibilityLabel={`${collapsed.has(item.id) && !search.trim() ? "Expand" : "Collapse"} task`} disabled={!groups.has(item.id) || !!search.trim()}
           onPress={() => setCollapsed(value => { const next = new Set(value); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })}
           style={{ width: 22, paddingVertical: 6 }}>
-          {groups.has(item.id) && <View style={{ transform: [{ rotate: collapsed.has(item.id) ? "-90deg" : "0deg" }],
+          {groups.has(item.id) && <View style={{ transform: [{ rotate: collapsed.has(item.id) && !search.trim() ? "-90deg" : "0deg" }],
             ...(Platform.OS === "web" ? { transitionProperty: "transform", transitionDuration: reducedMotion ? "0ms" : "160ms", transitionTimingFunction: "ease-out" } : {}) }}>
             <Icon name="ChevronDown" size={14} color={c.foregroundMuted} />
           </View>}
         </Pressable>
-        <View {...drag.handle(item.id, () => complete(item.id))} accessibilityRole="checkbox" accessible focusable
+        <View {...drag.handle(item.id, () => complete(item.id), !filtering)} accessibilityRole="checkbox" accessible focusable
           accessibilityLabel={`Complete ${item.text || "task"}`} accessibilityState={{ checked: item.completed }}
-          accessibilityHint="Click to toggle completion. Drag to move the task."
+          accessibilityHint={filtering ? "Click to toggle completion." : "Click to toggle completion. Drag to move the task."}
           accessibilityActions={[{ name: "activate", label: "Toggle completion" }]}
           onAccessibilityAction={event => { if (event.nativeEvent.actionName === "activate") complete(item.id); }}
           {...(Platform.OS === "web" ? { onKeyDown: (event: { nativeEvent: { key: string; repeat?: boolean }; preventDefault(): void }) => {
@@ -256,7 +280,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
             const height = Math.max(26, Math.ceil(event.nativeEvent.contentSize.height));
             setRowHeights(previous => previous[item.id] === height ? previous : { ...previous, [item.id]: height });
           }}
-          onBlur={() => enqueue()}
+          onFocus={() => setEditingId(item.id)} onBlur={() => { setEditingId(null); enqueue(); }}
           onKeyPress={event => { if (Platform.OS === "web") keyPress(event as KeyEvent, item); }}
           submitBehavior={Platform.OS === "web" ? "newline" : "submit"}
           onSubmitEditing={() => { if (Platform.OS !== "web") add(item.id); }}
@@ -283,6 +307,7 @@ function OutlineEditor({ workspaceId, theme, layout, navigation }: PluginWorkspa
       {data && !items.length && <Pressable accessibilityRole="button" onPress={() => add()} style={{ padding: 12 }}>
         <Text style={{ color: c.foregroundMuted, fontSize: 15 }}>+ Start your first task</Text>
       </Pressable>}
+      {data && items.length > 0 && visible.length === 0 && <Text style={{ ...muted, padding: 12 }}>No tasks match this view.</Text>}
     </ScrollView>
     {/* One overlay centered on the shared row boundary, outside folding clips. */}
     <View pointerEvents="none" style={{ position: "absolute", height: 2, backgroundColor: c.accent,

@@ -26,9 +26,17 @@ Click task text to edit it. Text saves after a short pause, on blur, and before 
 | Command+Enter / Ctrl+Enter | Toggle completion |
 | Backspace on an empty task | Delete it if it has no children |
 
-Use the circle beside a task to toggle completion and the chevron to collapse its children. Children inherit completion from a completed ancestor: their text is struck through and they count toward progress, but only explicitly completed tasks show a green checkmark. Each task keeps its own completion flag, so reopening a parent restores unfinished descendants. Moving a task changes which ancestors it inherits completion from.
+Use the circle beside a task to toggle completion and the chevron to collapse its children. Tasks are implicitly complete when an ancestor is complete or all their children are complete, recursively. Tasks without children are not complete automatically. Implicitly completed tasks are struck through and count toward progress, but only explicitly completed tasks show a green checkmark. Each task keeps its own saved flag. Reopening a child makes implicit parents unfinished again unless another completed ancestor still applies. Adding, moving, or deleting children recalculates implicit completion.
 
 Drag the checkbox circle beside a task to move it with its children. Clicking the circle without dragging toggles completion. Drop near the top or bottom of another row to place it before or after that task; drop in the middle to nest it inside. A line marks insertion points and a highlighted row marks nesting. The outline scrolls when you hold the drag near its top or bottom edge. Concurrent changes to the task order cancel the move so you can review the new order.
+
+## Filtering
+
+Use **Search tasks** to find text, with ancestor tasks retained for context. Search temporarily reveals matches inside collapsed branches; clearing it restores the collapse choices. **Hide completed** hides both explicitly and implicitly completed tasks and keeps unfinished tasks visible.
+
+Use the search field's clear button to clear search, and the **Hide completed** switch to toggle the completion filter. Progress always covers the whole workspace. These settings are local to the open panel and reset when it closes; they do not change the shared outline or another agent's view.
+
+Reordering with drag or Tab is available in the unfiltered view. Adding a task clears search and the completion filter so the new row is visible.
 
 ## Agent tools
 

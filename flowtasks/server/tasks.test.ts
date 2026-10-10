@@ -72,7 +72,8 @@ test("inherited completion is reversible and follows moves without changing save
   assert.deepEqual(await new TaskStore(store.directory).read("w"), state);
   state = await store.change("w", state.revision, { type: "update", id: parent, completed: false });
   assert.deepEqual(state.items.map(item => item.completed), [false, false, false, true, false]);
-  assert.deepEqual(taskView(state, "open").items.map(item => item.text), ["Root", "Parent", "Child", "Sibling"]);
+  // The explicit grandchild keeps Child and Parent implicitly complete.
+  assert.deepEqual(taskView(state, "open").items.map(item => item.text), ["Root", "Sibling"]);
   state = await store.change("w", state.revision, { type: "update", id: child, completed: false });
   state = await store.change("w", state.revision, { type: "update", id: parent, text: "Renamed" });
   assert.deepEqual(state.items.map(item => item.completed), [false, false, false, true, false]);
@@ -82,9 +83,9 @@ test("inherited completion is reversible and follows moves without changing save
   assert.deepEqual(state.items.map(item => item.completed), [false, true, false, true, false, false]);
   assert.equal(completedIds(state.items).size, 4);
   state = await store.change("w", state.revision, { type: "move", id: child, parentId: root, afterId: null });
-  assert.equal(completedIds(state.items).has(child), false);
+  assert.equal(completedIds(state.items).has(child), true);
   assert.equal(completedIds(state.items).has(grandchild), true);
-  assert.equal(taskView(state, "completed").items.length, 3);
+  assert.equal(taskView(state, "completed").items.length, 4);
 });
 
 test("concurrent writes reject stale revisions; workspaces and reloads retain independent state", async t => {

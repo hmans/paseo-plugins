@@ -10,7 +10,7 @@ import { WorkspaceBindings } from "./bindings";
 
 export function createTaskMcp(store: TaskStore, workspaceId: string) {
   const mcp = new McpServer({ name: "flowtasks", version: "0.1.0" }, {
-    instructions: "Flowtasks is a shared workspace task outline. Read it with flowtasks_get. Use flowtasks_change for one edit or flowtasks_batch for atomic edits to a whole plan, including new parent/child references. Read before changes and pass the current revision. On a conflict, read again and reassess; do not blindly retry. completed is the task's own saved flag; effectiveCompleted also includes completion inherited from ancestors. Use status open to list only effectively open tasks. Completing or reopening a parent never changes its children's saved flags. Never edit the saved files directly.",
+    instructions: "Flowtasks is a shared workspace task outline. Read it with flowtasks_get. Use flowtasks_change for one edit or flowtasks_batch for atomic edits to a whole plan, including new parent/child references. Read before changes and pass the current revision. On a conflict, read again and reassess; do not blindly retry. completed is the task's own saved flag; effectiveCompleted also includes completion inherited from ancestors or from all children being complete, recursively. A task with no children needs explicit or inherited completion. Use status open to list only effectively open tasks. Changing completion never changes other tasks' saved flags. Never edit the saved files directly.",
   });
   const result = async (operation: () => Promise<Outline & { createdIds?: Record<string, string> }>, status: "all" | "open" | "completed" = "all") => {
     try {
@@ -20,7 +20,7 @@ export function createTaskMcp(store: TaskStore, workspaceId: string) {
     } catch (error) { return { isError: true, content: [{ type: "text" as const, text: message(error) }] }; }
   };
   mcp.registerTool("flowtasks_get", {
-    description: "Read this workspace's outline and revision. Optional status: all (default), open, or completed. Open excludes tasks completed explicitly or through an ancestor. completed is the saved flag; effectiveCompleted includes ancestors. Array order determines sibling order; parentId defines nesting. The workspace is fixed by your agent's token.",
+    description: "Read this workspace's outline and revision. Optional status: all (default), open, or completed. Open excludes explicit and implicit completion. completed is the saved flag; effectiveCompleted also includes completed ancestors and all children being complete, recursively. Array order determines sibling order; parentId defines nesting. The workspace is fixed by your agent's token.",
     inputSchema: z.object({ status: z.enum(["all", "open", "completed"]).optional() }).strict(), outputSchema: taskViewSchema,
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, input => result(() => store.read(workspaceId), input.status));

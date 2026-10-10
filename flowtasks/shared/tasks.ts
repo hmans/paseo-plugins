@@ -12,8 +12,10 @@ export const outlineSchema = z.object({
 }).strict();
 export type Outline = z.infer<typeof outlineSchema>;
 
-// Completion is inherited at read time; stored flags remain explicit choices.
+// Completion flows down from completed parents and up from complete child sets.
+// Derive it from saved flags on every read, so implicit completion is reversible.
 export function completedIds(items: Item[]): Set<string> {
+  const byId = new Map(items.map(item => [item.id, item]));
   const groups = new Map<string, Item[]>();
   for (const item of items) {
     if (item.parentId === null) continue;
@@ -22,12 +24,19 @@ export function completedIds(items: Item[]): Set<string> {
     groups.set(item.parentId, group);
   }
   const result = new Set<string>();
+  const remaining = new Map([...groups].map(([id, children]) => [id, children.length]));
   const pending = items.filter(item => item.completed);
   while (pending.length) {
     const item = pending.pop()!;
     if (result.has(item.id)) continue;
     result.add(item.id);
     pending.push(...(groups.get(item.id) ?? []));
+    if (item.parentId !== null) {
+      const count = (remaining.get(item.parentId) ?? 0) - 1;
+      remaining.set(item.parentId, count);
+      const parent = byId.get(item.parentId);
+      if (count === 0 && parent) pending.push(parent);
+    }
   }
   return result;
 }

@@ -74,7 +74,7 @@ export function useOutlineDrag(items: Item[], onDrop: (drag: Drag) => void) {
     drag, lineY, rows, viewport, scroll, cancel,
     onScroll(y: number) { offset.current = y; if (pointer.current !== null) update(pointer.current); },
     onContentSize(height: number) { contentHeight.current = height; maxScroll.current = Math.max(0, height - frame.current.height); },
-    handle(sourceId: string, onClick: () => void) {
+    handle(sourceId: string, onClick: () => void, enabled = true) {
       return {
         onStartShouldSetResponder: () => true,
         onResponderGrant: (event: GestureResponderEvent) => {
@@ -83,7 +83,7 @@ export function useOutlineDrag(items: Item[], onDrop: (drag: Drag) => void) {
         onResponderMove: (event: GestureResponderEvent) => {
           const origin = press.current;
           if (!origin) return;
-          if (!current.current && Math.hypot(event.nativeEvent.pageX - origin.x, event.nativeEvent.pageY - origin.y) >= 5) start(sourceId, event);
+          if (enabled && !current.current && Math.hypot(event.nativeEvent.pageX - origin.x, event.nativeEvent.pageY - origin.y) >= 5) start(sourceId, event);
           if (current.current) update(event.nativeEvent.pageY);
         },
         onResponderRelease: (event: GestureResponderEvent) => {
